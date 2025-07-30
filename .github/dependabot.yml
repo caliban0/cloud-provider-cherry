@@ -17,3 +17,24 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+
+  # Maintain dependencies for GitHub Actions.
+  - package-ecosystem: "github-actions"
+    target-branch: "v1.30"
+    directory: "/"
+    schedule:
+      interval: "daily"
+
+  # Maintain dependencies for Go modules.
+  - package-ecosystem: "gomod"
+    target-branch: "v1.30"
+    directory: "/"
+    schedule:
+      interval: "daily"
+
+  # Maintain dependencies for Docker images.
+  - package-ecosystem: "docker"
+    target-branch: "v1.30"
+    directory: "/"
+    schedule:
+      interval: "daily"
