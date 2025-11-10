@@ -29,7 +29,7 @@ const (
 	ControlPlaneNodeLabel = "node-role.kubernetes.io/control-plane"
 	informerResyncPeriod  = 5 * time.Second
 	informerTimeout       = 120 * time.Second
-	joinTimeout = 360 * time.Second
+	joinTimeout           = 360 * time.Second
 )
 
 type Node struct {
