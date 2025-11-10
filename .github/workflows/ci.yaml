@@ -21,6 +21,9 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        modules: [".", "./e2etest"]
     steps:
     - name: checkout
       uses: actions/checkout@v5
@@ -32,6 +35,7 @@ jobs:
       with:
         version: v2.5.0
         args: --verbose
+        working-directory: ${{ matrix.modules }}
   test:
     name: Test
     runs-on: ubuntu-latest
