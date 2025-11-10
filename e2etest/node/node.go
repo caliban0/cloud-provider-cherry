@@ -29,6 +29,7 @@ const (
 	ControlPlaneNodeLabel = "node-role.kubernetes.io/control-plane"
 	informerResyncPeriod  = 5 * time.Second
 	informerTimeout       = 120 * time.Second
+	joinTimeout = 360 * time.Second
 )
 
 type Node struct {
@@ -39,6 +40,10 @@ type Node struct {
 type ControlPlaneNode struct {
 	Node
 	K8sclient kubernetes.Interface
+}
+
+type WorkerNode struct {
+	Node
 }
 
 // RunCmd runs a shell command on the node via SSH.
@@ -106,7 +111,7 @@ func (n ControlPlaneNode) Deploy(manifest io.Reader) error {
 	return nil
 }
 
-func (n *ControlPlaneNode) getJoinCmd() (string, error) {
+func (n *ControlPlaneNode) getJoinCmd(worker bool) (string, error) {
 	r, err := n.RunCmd("microk8s add-node", nil)
 	if err != nil {
 		return "", fmt.Errorf("couldn't get join URL from control plane node: %w", err)
@@ -128,28 +133,38 @@ func (n *ControlPlaneNode) getJoinCmd() (string, error) {
 		return "", fmt.Errorf("no ip address in join cmd: %q", r)
 	}
 
+	if worker {
+		joinCmd += " --worker"
+	}
+
 	return joinCmd, nil
 }
 
-// JoinAsControlPlane joins nn to the base node's cluster.
-// Blocks until the node is ready.
-// The base node's cluster MUST have the CCM running.
-func (n *ControlPlaneNode) JoinAsControlPlane(ctx context.Context, nn Node) (ControlPlaneNode, error) {
-	const timeout = 360 * time.Second
-
-	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errors.New("node join timeout"))
-	defer cancel()
-
-	joinCmd, err := n.getJoinCmd()
+func (n *ControlPlaneNode) join(nn Node, worker bool) error {
+	joinCmd, err := n.getJoinCmd(worker)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("couldn't get join cmd from control plane: %w", err)
+		return fmt.Errorf("couldn't get join cmd from control plane: %w", err)
 	}
 
 	_, err = nn.RunCmd(joinCmd, nil)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("couldn't execute join cmd: %w", err)
+		return fmt.Errorf("couldn't execute join cmd: %w", err)
 	}
 
+	return nil
+}
+
+// JoinAsControlPlane joins nn to the base node's cluster as a CP node.
+// Blocks until the node is ready.
+// The base node's cluster MUST have the CCM running.
+func (n *ControlPlaneNode) JoinAsControlPlane(ctx context.Context, nn Node) (ControlPlaneNode, error) {
+	ctx, cancel := context.WithTimeoutCause(ctx, joinTimeout, errors.New("node join timeout"))
+	defer cancel()
+
+	err := n.join(nn, false)
+	if err != nil {
+		return ControlPlaneNode{}, fmt.Errorf("failed to execute join cmd: %w", err)
+	}
 	newNode := ControlPlaneNode{Node: nn}
 
 	newNode.addCpLabel(ctx)
@@ -166,6 +181,27 @@ func (n *ControlPlaneNode) JoinAsControlPlane(ctx context.Context, nn Node) (Con
 	err = newNode.UntilHasProviderID(ctx, newNode.K8sclient)
 	if err != nil {
 		return ControlPlaneNode{}, fmt.Errorf("added node didn't get a provider ID: %w", err)
+	}
+
+	return newNode, nil
+}
+
+// JoinAsWorker joins nn to the base node's cluster as a worker.
+// Blocks until the node is ready.
+// The base node's cluster MUST have the CCM running.
+func (n *ControlPlaneNode) JoinAsWorker(ctx context.Context, nn Node) (WorkerNode, error) {
+	ctx, cancel := context.WithTimeoutCause(ctx, joinTimeout, errors.New("node join timeout"))
+	defer cancel()
+
+	err := n.join(nn, true)
+	if err != nil {
+		return WorkerNode{}, fmt.Errorf("failed to execute join cmd: %w", err)
+	}
+	newNode := WorkerNode{Node: nn}
+
+	err = newNode.UntilHasProviderID(ctx, n.K8sclient)
+	if err != nil {
+		return WorkerNode{}, fmt.Errorf("added node didn't get a provider ID: %w", err)
 	}
 
 	return newNode, nil
