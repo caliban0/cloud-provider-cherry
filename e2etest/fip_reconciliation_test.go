@@ -50,7 +50,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 
 	err = untilIPHasTarget(ctx, fip, env.mainNode.Server.Hostname)
 	if err != nil {
-		t.Fatalf("fip didn't get attached to cp node: %v", err)
+		t.Fatalf("fip %s didn't get attached to cp node: %v", fip.ID, err)
 	}
 
 	nodes, errs := np.ProvisionBatch(ctx, 2)
@@ -73,15 +73,15 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	// test that fip remains attached to node after deleting another node
 	_, _, err = cherryClient.Servers.Delete(cp1.Server.ID)
 	if err != nil {
-		t.Fatalf("failed to delete server: %q", cp1.Server.Hostname)
+		t.Fatalf("failed to delete server %q: %v", cp1.Server.Hostname, err)
 	}
 
 	fip, _, err = cherryClient.IPAddresses.Get(fip.ID, nil)
 	if err != nil {
-		t.Fatalf("failed to get fip: %v", err)
+		t.Fatalf("failed to get fip %s: %v", fip.ID, err)
 	}
 	if fip.TargetedTo.Hostname != env.mainNode.Server.Hostname {
-		t.Fatalf("fip target: %q, want %q", fip.TargetedTo.Hostname, env.mainNode.Server.Hostname)
+		t.Fatalf("fip %s target: %q, want %q", fip.ID, fip.TargetedTo.Hostname, env.mainNode.Server.Hostname)
 	}
 
 	// test that fip is reattached when a cp node is disabled
@@ -92,7 +92,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 
 	err = untilIPHasTarget(ctx, fip, cp2.Server.Hostname)
 	if err != nil {
-		t.Fatalf("fip didn't get attached to cp node: %v", err)
+		t.Fatalf("fip %s didn't get attached to cp node %q: %v", fip.ID, cp2.Server.Hostname, err)
 	}
 
 }
