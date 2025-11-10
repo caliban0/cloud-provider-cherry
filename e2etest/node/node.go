@@ -55,6 +55,31 @@ func (n Node) RunCmd(cmd string, stdin io.Reader) (resp string, err error) {
 	return n.cmdRunner.run(ip, cmd, stdin)
 }
 
+func (n *Node) getJoinCmd() (string, error) {
+	r, err := n.RunCmd("microk8s add-node", nil)
+	if err != nil {
+		return "", fmt.Errorf("couldn't get join URL from control plane node: %w", err)
+	}
+	ip, err := serverPublicIP(n.Server)
+	if err != nil {
+		return "", err
+	}
+
+	// parse the microk8s join invitation response message
+	// looking for public ip
+	joinCmd := ""
+	for line := range strings.Lines(r) {
+		if strings.Contains(line, ip) {
+			joinCmd = line[:len(line)-1] // strip newline
+		}
+	}
+	if joinCmd == "" {
+		return "", fmt.Errorf("no ip address in join cmd: %q", r)
+	}
+
+	return joinCmd, nil
+}
+
 // JoinAsControlPlane joins nn to the base node's cluster.
 // Blocks until the node is ready.
 // The base node MUST be a control plane node.
@@ -65,22 +90,9 @@ func (n *Node) JoinAsControlPlane(ctx context.Context, nn Node) (Node, error) {
 	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errors.New("node join timeout"))
 	defer cancel()
 
-	r, err := n.RunCmd("microk8s add-node", nil)
+	joinCmd, err := n.getJoinCmd()
 	if err != nil {
-		return Node{}, fmt.Errorf("couldn't get join URL from control plane node: %w", err)
-	}
-	ip, err := serverPublicIP(n.Server)
-	if err != nil {
-		return Node{}, err
-	}
-
-	// parse the microk8s join invitation response message
-	// looking for public ip
-	joinCmd := ""
-	for line := range strings.Lines(r) {
-		if strings.Contains(line, ip) {
-			joinCmd = line[:len(line)-1] // strip newline
-		}
+		return Node{}, fmt.Errorf("couldn't get join cmd from control plane: %w", err)
 	}
 
 	_, err = nn.RunCmd(joinCmd, nil)
