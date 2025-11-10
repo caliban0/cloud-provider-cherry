@@ -695,6 +695,18 @@ func TestMetalLB(t *testing.T) {
 		name: testName, loadBalancer: metallbSetting,
 	})
 	ctx := env.ctx
+	var np nodeProvisioner = env.nodeProvisioner
+
+	n, err := np.Provision(ctx)
+	if err != nil {
+		t.Fatalf("failed to provision node: %v", err)
+	}
+
+	_, err = env.mainNode.JoinAsWorker(ctx, n.Node)
+	if err != nil {
+		t.Fatalf("failed to join node: %v", err)
+	}
+
 	env.mainNode.Deploy(getMetalLBManifest(ctx, t, *metalLBVersion))
 
 	kubeHelper := kubeHelpers{t, env.k8sClient}
@@ -725,6 +737,17 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 		name: testName, loadBalancer: kubeVipSetting,
 	})
 	ctx := env.ctx
+	var np nodeProvisioner = env.nodeProvisioner
+
+	n, err := np.Provision(ctx)
+	if err != nil {
+		t.Fatalf("failed to provision node: %v", err)
+	}
+
+	_, err = env.mainNode.JoinAsWorker(ctx, n.Node)
+	if err != nil {
+		t.Fatalf("failed to join node: %v", err)
+	}
 
 	// We need a local ASN to deploy kube-vip.
 	env.project = ensureProjectAsn(ctx, t, env.project, env.mainNode.Server)

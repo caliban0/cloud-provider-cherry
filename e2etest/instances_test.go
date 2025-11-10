@@ -52,12 +52,12 @@ func TestNodeAddDelete(t *testing.T) {
 	ctx := env.ctx
 	var np nodeProvisioner = env.nodeProvisioner
 
-	n, err := np.Provision(ctx)
+	nn, err := np.Provision(ctx)
 	if err != nil {
 		t.Fatalf("failed to provision node: %v", err)
 	}
 
-	n, err = env.mainNode.JoinAsControlPlane(ctx, n.Node)
+	n, err := env.mainNode.JoinAsWorker(ctx, nn.Node)
 	if err != nil {
 		t.Fatalf("failed to join nodes: %v", err)
 	}
