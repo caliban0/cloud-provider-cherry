@@ -59,7 +59,7 @@ func (n Node) RunCmd(cmd string, stdin io.Reader) (resp string, err error) {
 // Blocks until the node is ready.
 // The base node MUST be a control plane node.
 // The base node's cluster MUST have the CCM running.
-func (n *Node) JoinAsControlPlane(ctx context.Context, nn Node) error {
+func (n *Node) JoinAsControlPlane(ctx context.Context, nn Node) (Node, error) {
 	const timeout = 210 * time.Second
 
 	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errors.New("node join timeout"))
@@ -67,11 +67,11 @@ func (n *Node) JoinAsControlPlane(ctx context.Context, nn Node) error {
 
 	r, err := n.RunCmd("microk8s add-node", nil)
 	if err != nil {
-		return fmt.Errorf("couldn't get join URL from control plane node: %w", err)
+		return Node{}, fmt.Errorf("couldn't get join URL from control plane node: %w", err)
 	}
 	ip, err := serverPublicIP(n.Server)
 	if err != nil {
-		return err
+		return Node{}, err
 	}
 
 	// parse the microk8s join invitation response message
@@ -85,38 +85,52 @@ func (n *Node) JoinAsControlPlane(ctx context.Context, nn Node) error {
 
 	_, err = nn.RunCmd(joinCmd, nil)
 	if err != nil {
-		return fmt.Errorf("couldn't execute join cmd: %w", err)
+		return Node{}, fmt.Errorf("couldn't execute join cmd: %w", err)
 	}
 
 	nn.addCpLabel(ctx)
 	kubeconfig, err := nn.RunCmd("microk8s config", nil)
 	if err != nil {
-		return fmt.Errorf("failed to get k8s config: %w", err)
+		return Node{}, fmt.Errorf("failed to get k8s config: %w", err)
 	}
 
 	nn.K8sclient, err = newK8sClient(kubeconfig)
 	if err != nil {
-		return fmt.Errorf("failed to create k8s client: %w", err)
+		return Node{}, fmt.Errorf("failed to create k8s client: %w", err)
 	}
-	return nn.UntilHasProviderID(ctx)
+
+	err = nn.UntilHasProviderID(ctx)
+	if err != nil {
+		return Node{}, fmt.Errorf("added node didn't get a provider ID: %w", err)
+	}
+
+	return nn, nil
 }
 
 // JoinBatch wraps join to join multiply nodes to the base node
 // in a concurrent manner.
-func (n *Node) JoinBatch(ctx context.Context, nodes []Node) []error {
+func (n *Node) JoinBatch(ctx context.Context, nodes []Node) ([]Node, []error) {
+	type s struct {
+		err  error
+		node Node
+	}
+
 	errs := make([]error, len(nodes))
-	c := make(chan error, len(nodes))
+	c := make(chan s, len(nodes))
 
 	for i := range len(nodes) {
 		go func() {
-			c <- n.JoinAsControlPlane(ctx, nodes[i])
+			node, err := n.JoinAsControlPlane(ctx, nodes[i])
+			c <- s{err, node}
 		}()
 	}
 
 	for i := range len(nodes) {
-		errs[i] = <-c
+		r := <-c
+		errs[i] = r.err
+		nodes[i] = r.node
 	}
-	return errs
+	return nodes, errs
 }
 
 // Remove removes the provided node from the base node.
