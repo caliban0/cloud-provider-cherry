@@ -560,6 +560,36 @@ func (s loadBalancerSubTester) testDistinctIngressIps(t *testing.T) {
 
 }
 
+func newLoadBalancerSubTester(ctx context.Context,
+	kubeHelper kubeHelpers,
+	env *testEnv,
+	namespace string) loadBalancerSubTester {
+	testDeployment := kubeHelper.setupNginx(ctx, namespace)
+	selector := testDeployment.Spec.Selector.MatchLabels
+
+	firstSvc := kubeHelper.setupLoadBalancer(ctx, loadBalancerConfig{
+		name:      "example-service-1",
+		namespace: namespace,
+		selector:  selector,
+	})
+
+	*firstSvc = kubeHelper.untilLoadBalancerEnsured(ctx, *firstSvc, namespace)
+
+	secondSvc := kubeHelper.setupLoadBalancer(ctx, loadBalancerConfig{
+		name:      "example-service-2",
+		namespace: namespace,
+		selector:  selector,
+	})
+
+	*secondSvc = kubeHelper.untilLoadBalancerEnsured(ctx, *secondSvc, namespace)
+
+	return loadBalancerSubTester{
+		env:       env,
+		firstSvc:  firstSvc,
+		secondSvc: secondSvc,
+	}
+}
+
 func untilFipGone(ctx context.Context, projectID int, address string) error {
 	const timeout = time.Second * 90
 
@@ -622,30 +652,9 @@ func TestMetalLB(t *testing.T) {
 
 	kubeHelper := kubeHelpers{t, env.k8sClient}
 
-	testDeployment := kubeHelper.setupNginx(ctx, namespace)
-	selector := testDeployment.Spec.Selector.MatchLabels
-
-	firstSvc := kubeHelper.setupLoadBalancer(ctx, loadBalancerConfig{
-		name:      "example-service-1",
-		namespace: namespace,
-		selector:  selector,
-	})
-
-	*firstSvc = kubeHelper.untilLoadBalancerEnsured(ctx, *firstSvc, namespace)
-
-	secondSvc := kubeHelper.setupLoadBalancer(ctx, loadBalancerConfig{
-		name:      "example-service-2",
-		namespace: namespace,
-		selector:  selector,
-	})
-
-	*secondSvc = kubeHelper.untilLoadBalancerEnsured(ctx, *secondSvc, namespace)
-
-	subtester := loadBalancerSubTester{
-		firstSvc:  firstSvc,
-		secondSvc: secondSvc,
-		env:       env,
-	}
+	subtester := newLoadBalancerSubTester(ctx, kubeHelper, env, namespace)
+	firstSvc := subtester.firstSvc
+	secondSvc := subtester.secondSvc
 
 	subtester.testFipTags(ctx, t)
 	subtester.testServerBgpEnabled(t)
@@ -718,36 +727,16 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 		version:     *kubeVipVersion,
 	})
 
-	testDeployment := kubeHelper.setupNginx(ctx, namespace)
-	selector := testDeployment.Spec.Selector.MatchLabels
-
-	firstSvc := kubeHelper.setupLoadBalancer(ctx, loadBalancerConfig{
-		name:      "example-service-1",
-		namespace: namespace,
-		selector:  selector,
-	})
-
-	*firstSvc = kubeHelper.untilLoadBalancerEnsured(ctx, *firstSvc, namespace)
-
-	secondSvc := kubeHelper.setupLoadBalancer(ctx, loadBalancerConfig{
-		name:      "example-service-2",
-		namespace: namespace,
-		selector:  selector,
-	})
-
-	*secondSvc = kubeHelper.untilLoadBalancerEnsured(ctx, *secondSvc, namespace)
-
-	subtester := loadBalancerSubTester{
-		firstSvc:  firstSvc,
-		secondSvc: secondSvc,
-		env:       env,
-	}
+	subtester := newLoadBalancerSubTester(ctx, kubeHelper, env, namespace)
+	firstSvc := subtester.firstSvc
+	secondSvc := subtester.secondSvc
 
 	subtester.testFipTags(ctx, t)
 	subtester.testServerBgpEnabled(t)
 	subtester.testProjectBgpEnabled(t)
 	subtester.testNodeHasAnnotations(ctx, t)
 	subtester.testDistinctIngressIps(t)
+
 
 	firstSvcIP := firstSvc.Status.LoadBalancer.Ingress[0].IP
 	secondSvcIP := secondSvc.Status.LoadBalancer.Ingress[0].IP
