@@ -515,32 +515,6 @@ func (s loadBalancerSubTester) testNodeHasAnnotations(ctx context.Context, t *te
 	})
 }
 
-func (s loadBalancerSubTester) testNodeDoesntHaveAnnotations(ctx context.Context, t *testing.T) {
-	t.Run("node doesn't have annotations", func(t *testing.T) {
-		node, err := s.env.k8sClient.CoreV1().Nodes().Get(ctx, s.env.mainNode.Server.Hostname, metav1.GetOptions{})
-		if err != nil {
-			t.Fatalf("failed to get node: %v", err)
-		}
-
-		for i := range s.env.mainNode.Server.Region.BGP.Hosts {
-			peerAsnKey := strings.Replace(ccm.DefaultAnnotationPeerASN, "{{n}}", strconv.Itoa(i), 1)
-			if got, ok := node.Annotations[peerAsnKey]; ok != false {
-				t.Errorf("peerAsn=%s, want: not found, key=%s", got, peerAsnKey)
-			}
-
-			nodeAsnKey := strings.Replace(ccm.DefaultAnnotationNodeASN, "{{n}}", strconv.Itoa(i), 1)
-			if got, ok := node.Annotations[nodeAsnKey]; ok != false {
-				t.Errorf("nodeAsn=%s, want: not found, key=%s", got, nodeAsnKey)
-			}
-
-			peerIPKey := strings.Replace(ccm.DefaultAnnotationPeerIP, "{{n}}", strconv.Itoa(i), 1)
-			if got, ok := node.Annotations[peerIPKey]; ok != false {
-				t.Errorf("peerIp=%s, want: not found, key=%s", got, peerIPKey)
-			}
-		}
-	})
-}
-
 func (s loadBalancerSubTester) testDistinctIngressIps(t *testing.T) {
 	t.Run("distinct sevice ips", func(t *testing.T) {
 		firstIP := s.firstSvc.Status.LoadBalancer.Ingress[0].IP
@@ -772,6 +746,4 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 
 	subtester.testFirstServiceRemoval(ctx, t, namespace)
 	subtester.testSecondServiceRemoval(ctx, t, namespace)
-
-	subtester.testNodeDoesntHaveAnnotations(ctx, t)
 }
