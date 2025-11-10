@@ -57,7 +57,7 @@ func TestNodeAddDelete(t *testing.T) {
 		t.Fatalf("failed to provision node: %v", err)
 	}
 
-	n, err = env.mainNode.JoinAsControlPlane(ctx, n)
+	n, err = env.mainNode.JoinAsControlPlane(ctx, n.Node)
 	if err != nil {
 		t.Fatalf("failed to join nodes: %v", err)
 	}
