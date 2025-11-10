@@ -609,8 +609,10 @@ func getMetalLBManifest(ctx context.Context, t *testing.T, version string) io.Re
 
 func TestMetalLB(t *testing.T) {
 	t.Parallel()
-	const testName = "kubernetes-ccm-test-lb-metal-lb"
-	const namespace = metav1.NamespaceDefault
+	const (
+		testName  = "kubernetes-ccm-test-lb-metal-lb"
+		namespace = metav1.NamespaceDefault
+	)
 
 	env := setupTestEnv(t, testEnvConfig{
 		name: testName, loadBalancer: metallbSetting,
@@ -693,7 +695,10 @@ func TestMetalLB(t *testing.T) {
 // it's not part of the kube-vip load balancer implementation.
 func TestKubeVipAndNodeAnnotations(t *testing.T) {
 	t.Parallel()
-	const testName = "kubernetes-ccm-test-lb-kube-vip"
+	const (
+		testName  = "kubernetes-ccm-test-lb-kube-vip"
+		namespace = metav1.NamespaceDefault
+	)
 
 	env := setupTestEnv(t, testEnvConfig{
 		name: testName, loadBalancer: kubeVipSetting,
@@ -712,8 +717,6 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 		routerID:    env.mainNode.Server.IPAddresses[0].Address,
 		version:     *kubeVipVersion,
 	})
-
-	const namespace = metav1.NamespaceDefault
 
 	testDeployment := kubeHelper.setupNginx(ctx, namespace)
 	selector := testDeployment.Spec.Selector.MatchLabels
@@ -744,6 +747,7 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 	subtester.testServerBgpEnabled(t)
 	subtester.testProjectBgpEnabled(t)
 	subtester.testNodeHasAnnotations(ctx, t)
+	subtester.testDistinctIngressIps(t)
 
 	firstSvcIP := firstSvc.Status.LoadBalancer.Ingress[0].IP
 	secondSvcIP := secondSvc.Status.LoadBalancer.Ingress[0].IP
