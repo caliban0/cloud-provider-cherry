@@ -557,7 +557,54 @@ func (s loadBalancerSubTester) testDistinctIngressIps(t *testing.T) {
 			t.Errorf("both services have the same ingress ip: %s", firstIP)
 		}
 	})
+}
 
+func (s loadBalancerSubTester) testFirstServiceRemoval(ctx context.Context,
+	t *testing.T,
+	namespace string) {
+	firstSvcIP := s.firstSvc.Status.LoadBalancer.Ingress[0].IP
+	secondSvcIP := s.secondSvc.Status.LoadBalancer.Ingress[0].IP
+
+	t.Run("second service ok after first is deleted", func(t *testing.T) {
+		svcClient := s.env.k8sClient.CoreV1().Services(namespace)
+		err := svcClient.Delete(ctx, s.firstSvc.Name, metav1.DeleteOptions{})
+		if err != nil {
+			t.Fatalf("failed to delete service %q: %v", s.firstSvc.Name, err)
+		}
+
+		err = untilFipGone(ctx, s.env.project.ID, firstSvcIP)
+		if err != nil {
+			t.Errorf("first service fip not removed: %v", err)
+		}
+
+		secondSvc, err := svcClient.Get(ctx, s.secondSvc.Name, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("failed to get service: %v", err)
+		}
+
+		got, want := secondSvc.Status.LoadBalancer.Ingress[0].IP, secondSvcIP
+		if got != want {
+			t.Errorf("second service's ip changed after deleting first: from %s to %s", want, got)
+		}
+	})
+}
+
+func (s loadBalancerSubTester) testSecondServiceRemoval(ctx context.Context,
+	t *testing.T,
+	namespace string) {
+	secondSvcIP := s.secondSvc.Status.LoadBalancer.Ingress[0].IP
+
+	t.Run("second service is removed", func(t *testing.T) {
+		svcClient := s.env.k8sClient.CoreV1().Services(namespace)
+		err := svcClient.Delete(ctx, s.secondSvc.Name, metav1.DeleteOptions{})
+		if err != nil {
+			t.Fatalf("failed to delete service %q: %v", s.secondSvc.Name, err)
+		}
+		err = untilFipGone(ctx, s.env.project.ID, secondSvcIP)
+		if err != nil {
+			t.Errorf("fip not removed: %v", err)
+		}
+	})
 }
 
 func newLoadBalancerSubTester(ctx context.Context,
@@ -653,49 +700,14 @@ func TestMetalLB(t *testing.T) {
 	kubeHelper := kubeHelpers{t, env.k8sClient}
 
 	subtester := newLoadBalancerSubTester(ctx, kubeHelper, env, namespace)
-	firstSvc := subtester.firstSvc
-	secondSvc := subtester.secondSvc
 
 	subtester.testFipTags(ctx, t)
 	subtester.testServerBgpEnabled(t)
 	subtester.testProjectBgpEnabled(t)
 	subtester.testDistinctIngressIps(t)
 
-	firstSvcIP := firstSvc.Status.LoadBalancer.Ingress[0].IP
-	secondSvcIP := secondSvc.Status.LoadBalancer.Ingress[0].IP
-
-	t.Run("remove first service", func(t *testing.T) {
-		err := env.k8sClient.CoreV1().Services(namespace).Delete(ctx, firstSvc.Name, metav1.DeleteOptions{})
-		if err != nil {
-			t.Fatalf("failed to delete service %q: %v", firstSvc.Name, err)
-		}
-		err = untilFipGone(ctx, env.project.ID, firstSvcIP)
-		if err != nil {
-			t.Errorf("fip not removed: %v", err)
-		}
-
-		secondSvc, err = env.k8sClient.CoreV1().Services(namespace).Get(ctx, secondSvc.Name, metav1.GetOptions{})
-		if err != nil {
-			t.Fatalf("failed to get service: %v", err)
-		}
-
-		got, want := secondSvc.Status.LoadBalancer.Ingress[0].IP, secondSvcIP
-		if got != want {
-			t.Errorf("second service's ip changed after deleting first: from %s to %s", want, got)
-		}
-	})
-
-	t.Run("remove second service", func(t *testing.T) {
-		err := env.k8sClient.CoreV1().Services(namespace).Delete(ctx, secondSvc.Name, metav1.DeleteOptions{})
-		if err != nil {
-			t.Fatalf("failed to delete service %q: %v", secondSvc.Name, err)
-		}
-		err = untilFipGone(ctx, env.project.ID, secondSvcIP)
-		if err != nil {
-			t.Errorf("fip not removed: %v", err)
-		}
-	})
-
+	subtester.testFirstServiceRemoval(ctx, t, namespace)
+	subtester.testSecondServiceRemoval(ctx, t, namespace)
 }
 
 // kube-vip and node annotations tests are combined,
@@ -728,8 +740,6 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 	})
 
 	subtester := newLoadBalancerSubTester(ctx, kubeHelper, env, namespace)
-	firstSvc := subtester.firstSvc
-	secondSvc := subtester.secondSvc
 
 	subtester.testFipTags(ctx, t)
 	subtester.testServerBgpEnabled(t)
@@ -737,44 +747,8 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 	subtester.testNodeHasAnnotations(ctx, t)
 	subtester.testDistinctIngressIps(t)
 
+	subtester.testFirstServiceRemoval(ctx, t, namespace)
+	subtester.testSecondServiceRemoval(ctx, t, namespace)
 
-	firstSvcIP := firstSvc.Status.LoadBalancer.Ingress[0].IP
-	secondSvcIP := secondSvc.Status.LoadBalancer.Ingress[0].IP
-
-	t.Run("remove first service", func(t *testing.T) {
-
-		err := env.k8sClient.CoreV1().Services(namespace).Delete(ctx, firstSvc.Name, metav1.DeleteOptions{})
-		if err != nil {
-			t.Fatalf("failed to delete service %q: %v", firstSvc.Name, err)
-		}
-		err = untilFipGone(ctx, env.project.ID, firstSvcIP)
-		if err != nil {
-			t.Errorf("fip not removed: %v", err)
-		}
-
-		secondSvc, err = env.k8sClient.CoreV1().Services(namespace).Get(ctx, secondSvc.Name, metav1.GetOptions{})
-		if err != nil {
-			t.Fatalf("failed to get service: %v", err)
-		}
-
-		got, want := secondSvc.Status.LoadBalancer.Ingress[0].IP, secondSvcIP
-		if got != want {
-			t.Errorf("second service's ip changed after deleting first: from %s to %s", want, got)
-		}
-
-		subtester.testNodeHasAnnotations(ctx, t)
-	})
-
-	t.Run("remove second service", func(t *testing.T) {
-		err := env.k8sClient.CoreV1().Services(namespace).Delete(ctx, secondSvc.Name, metav1.DeleteOptions{})
-		if err != nil {
-			t.Fatalf("failed to delete service %q: %v", secondSvc.Name, err)
-		}
-		err = untilFipGone(ctx, env.project.ID, secondSvcIP)
-		if err != nil {
-			t.Errorf("fip not removed: %v", err)
-		}
-
-		subtester.testNodeDoesntHaveAnnotations(ctx, t)
-	})
+	subtester.testNodeDoesntHaveAnnotations(ctx, t)
 }
