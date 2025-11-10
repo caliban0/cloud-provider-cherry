@@ -46,9 +46,9 @@ type WorkerNode struct {
 	Node
 }
 
-// RunCmd runs a shell command on the node via SSH.
+// runCmd runs a shell command on the node via SSH.
 // Passing nil stdin is fine.
-func (n Node) RunCmd(cmd string, stdin io.Reader) (resp string, err error) {
+func (n Node) runCmd(cmd string, stdin io.Reader) (resp string, err error) {
 	ip, err := serverPublicIP(n.Server)
 	if err != nil {
 		return "", err
@@ -104,7 +104,7 @@ func (n *Node) LoadImage(ociPath string) error {
 }
 
 func (n ControlPlaneNode) Deploy(manifest io.Reader) error {
-	r, err := n.RunCmd("microk8s kubectl apply -f - ", manifest)
+	r, err := n.runCmd("microk8s kubectl apply -f - ", manifest)
 	if err != nil {
 		return fmt.Errorf("failed to apply manifest: %s", r)
 	}
@@ -112,7 +112,7 @@ func (n ControlPlaneNode) Deploy(manifest io.Reader) error {
 }
 
 func (n *ControlPlaneNode) getJoinCmd(worker bool) (string, error) {
-	r, err := n.RunCmd("microk8s add-node", nil)
+	r, err := n.runCmd("microk8s add-node", nil)
 	if err != nil {
 		return "", fmt.Errorf("couldn't get join URL from control plane node: %w", err)
 	}
@@ -146,7 +146,7 @@ func (n *ControlPlaneNode) join(nn Node, worker bool) error {
 		return fmt.Errorf("couldn't get join cmd from control plane: %w", err)
 	}
 
-	_, err = nn.RunCmd(joinCmd, nil)
+	_, err = nn.runCmd(joinCmd, nil)
 	if err != nil {
 		return fmt.Errorf("couldn't execute join cmd: %w", err)
 	}
@@ -168,7 +168,7 @@ func (n *ControlPlaneNode) JoinAsControlPlane(ctx context.Context, nn Node) (Con
 	newNode := ControlPlaneNode{Node: nn}
 
 	newNode.addCpLabel(ctx)
-	kubeconfig, err := nn.RunCmd("microk8s config", nil)
+	kubeconfig, err := nn.runCmd("microk8s config", nil)
 	if err != nil {
 		return ControlPlaneNode{}, fmt.Errorf("failed to get k8s config: %w", err)
 	}
@@ -236,7 +236,7 @@ func (n *ControlPlaneNode) JoinControlPlanesBatch(ctx context.Context, nodes []N
 
 // Remove removes the provided node from the base node.
 func (n *ControlPlaneNode) Remove(nn Node) error {
-	resp, err := n.RunCmd("microk8s remove-node "+nn.Server.Hostname+" --force", nil)
+	resp, err := n.runCmd("microk8s remove-node "+nn.Server.Hostname+" --force", nil)
 	if err != nil {
 		return fmt.Errorf("failed to remove node: %v: %s", err, resp)
 	}
@@ -251,7 +251,7 @@ func (n *ControlPlaneNode) addCpLabel(ctx context.Context) error {
 	defer cancel()
 
 	return backoff.ExpBackoffWithContext(func() (bool, error) {
-		_, err := n.RunCmd("microk8s kubectl label nodes "+n.Server.Hostname+
+		_, err := n.runCmd("microk8s kubectl label nodes "+n.Server.Hostname+
 			" "+ControlPlaneNodeLabel+"=\"\"", nil)
 		if err != nil {
 			return false, nil
