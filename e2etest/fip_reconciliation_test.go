@@ -60,7 +60,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		}
 	}
 
-	nodes, errs = env.mainNode.JoinBatch(ctx, nodes)
+	nodes, errs = env.mainNode.JoinControlPlanesBatch(ctx, node.ControlPlanesToNodes(nodes))
 	for _, err := range errs {
 		if err != nil {
 			t.Fatalf("failed to join node: %v", err)
@@ -85,7 +85,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	}
 
 	// test that fip is reattached when a cp node is disabled
-	err = cp2.Remove(&env.mainNode)
+	err = cp2.Remove(env.mainNode.Node)
 	if err != nil {
 		t.Fatalf("couldn't remove node from cluster: %v", err)
 	}

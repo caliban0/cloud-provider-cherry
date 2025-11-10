@@ -36,7 +36,7 @@ func setupProject(t testing.TB, name string) cherrygo.Project {
 
 type testEnv struct {
 	project         cherrygo.Project
-	mainNode        node.Node
+	mainNode        node.ControlPlaneNode
 	nodeProvisioner node.Microk8sNodeProvisioner
 	k8sClient       kubernetes.Interface
 	ctx             context.Context
@@ -49,11 +49,11 @@ type testEnvConfig struct {
 }
 
 type nodeProvisioner interface {
-	Provision(context.Context) (node.Node, error)
+	Provision(context.Context) (node.ControlPlaneNode, error)
 }
 
 type batchNodeProvisioner interface {
-	ProvisionBatch(context.Context, int) ([]node.Node, []error)
+	ProvisionBatch(context.Context, int) ([]node.ControlPlaneNode, []error)
 }
 
 func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
@@ -102,7 +102,7 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 	}
 }
 
-func deployCcm(ctx context.Context, t testing.TB, n node.Node, cfg ccm.Config) {
+func deployCcm(ctx context.Context, t testing.TB, n node.ControlPlaneNode, cfg ccm.Config) {
 	const (
 		imgTag       = "ghcr.io/cherryservers/cloud-provider-cherry:test"
 		manifestPath = "../deploy/template/deployment.yaml"
@@ -137,7 +137,7 @@ func deployCcm(ctx context.Context, t testing.TB, n node.Node, cfg ccm.Config) {
 
 	// when node.cloudprovider.kubernetes.io/uninitialized
 	// is gone, the ccm is running.
-	n.UntilHasProviderID(ctx)
+	n.UntilHasProviderID(ctx, n.K8sclient)
 }
 
 func beforeTimeoutCtx(t *testing.T) (context.Context, context.CancelFunc) {

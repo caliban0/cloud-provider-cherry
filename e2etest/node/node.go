@@ -33,16 +33,12 @@ const (
 
 type Node struct {
 	Server    cherrygo.Server
-	K8sclient kubernetes.Interface
 	cmdRunner sshCmdRunner
 }
 
-func (n Node) Deploy(manifest io.Reader) error {
-	r, err := n.RunCmd("microk8s kubectl apply -f - ", manifest)
-	if err != nil {
-		return fmt.Errorf("failed to apply manifest: %s", r)
-	}
-	return nil
+type ControlPlaneNode struct {
+	Node
+	K8sclient kubernetes.Interface
 }
 
 // RunCmd runs a shell command on the node via SSH.
@@ -55,127 +51,11 @@ func (n Node) RunCmd(cmd string, stdin io.Reader) (resp string, err error) {
 	return n.cmdRunner.run(ip, cmd, stdin)
 }
 
-func (n *Node) getJoinCmd() (string, error) {
-	r, err := n.RunCmd("microk8s add-node", nil)
-	if err != nil {
-		return "", fmt.Errorf("couldn't get join URL from control plane node: %w", err)
-	}
-	ip, err := serverPublicIP(n.Server)
-	if err != nil {
-		return "", err
-	}
-
-	// parse the microk8s join invitation response message
-	// looking for public ip
-	joinCmd := ""
-	for line := range strings.Lines(r) {
-		if strings.Contains(line, ip) {
-			joinCmd = line[:len(line)-1] // strip newline
-		}
-	}
-	if joinCmd == "" {
-		return "", fmt.Errorf("no ip address in join cmd: %q", r)
-	}
-
-	return joinCmd, nil
-}
-
-// JoinAsControlPlane joins nn to the base node's cluster.
-// Blocks until the node is ready.
-// The base node MUST be a control plane node.
-// The base node's cluster MUST have the CCM running.
-func (n *Node) JoinAsControlPlane(ctx context.Context, nn Node) (Node, error) {
-	const timeout = 210 * time.Second
-
-	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errors.New("node join timeout"))
-	defer cancel()
-
-	joinCmd, err := n.getJoinCmd()
-	if err != nil {
-		return Node{}, fmt.Errorf("couldn't get join cmd from control plane: %w", err)
-	}
-
-	_, err = nn.RunCmd(joinCmd, nil)
-	if err != nil {
-		return Node{}, fmt.Errorf("couldn't execute join cmd: %w", err)
-	}
-
-	nn.addCpLabel(ctx)
-	kubeconfig, err := nn.RunCmd("microk8s config", nil)
-	if err != nil {
-		return Node{}, fmt.Errorf("failed to get k8s config: %w", err)
-	}
-
-	nn.K8sclient, err = newK8sClient(kubeconfig)
-	if err != nil {
-		return Node{}, fmt.Errorf("failed to create k8s client: %w", err)
-	}
-
-	err = nn.UntilHasProviderID(ctx)
-	if err != nil {
-		return Node{}, fmt.Errorf("added node didn't get a provider ID: %w", err)
-	}
-
-	return nn, nil
-}
-
-// JoinBatch wraps join to join multiply nodes to the base node
-// in a concurrent manner.
-func (n *Node) JoinBatch(ctx context.Context, nodes []Node) ([]Node, []error) {
-	type s struct {
-		err  error
-		node Node
-	}
-
-	errs := make([]error, len(nodes))
-	c := make(chan s, len(nodes))
-
-	for i := range len(nodes) {
-		go func() {
-			node, err := n.JoinAsControlPlane(ctx, nodes[i])
-			c <- s{err, node}
-		}()
-	}
-
-	for i := range len(nodes) {
-		r := <-c
-		errs[i] = r.err
-		nodes[i] = r.node
-	}
-	return nodes, errs
-}
-
-// Remove removes the provided node from the base node.
-func (n *Node) Remove(nn *Node) error {
-	resp, err := n.RunCmd("microk8s remove-node "+nn.Server.Hostname+" --force", nil)
-	if err != nil {
-		return fmt.Errorf("failed to remove node: %v: %s", err, resp)
-	}
-	return nil
-}
-
-// addCpLabel adds the well-known control plane label
-// to the node, since microk8s doesn't use it,
-// but we need it for fip reconciliation.
-func (n *Node) addCpLabel(ctx context.Context) error {
-	ctx, cancel := context.WithTimeoutCause(ctx, 64*time.Second, fmt.Errorf("timed out on label apply for %s", n.Server.Hostname))
-	defer cancel()
-
-	return backoff.ExpBackoffWithContext(func() (bool, error) {
-		_, err := n.RunCmd("microk8s kubectl label nodes "+n.Server.Hostname+
-			" "+ControlPlaneNodeLabel+"=\"\"", nil)
-		if err != nil {
-			return false, nil
-		}
-		return true, nil
-	}, backoff.DefaultExpBackoffConfigWithContext(ctx))
-}
-
-func (n *Node) UntilHasProviderID(ctx context.Context) error {
+func (n *Node) UntilHasProviderID(ctx context.Context, k8sClient kubernetes.Interface) error {
 	ctx, cancel := context.WithTimeout(ctx, informerTimeout)
 	hasID := false
 
-	factory := informers.NewSharedInformerFactory(n.K8sclient, informerResyncPeriod)
+	factory := informers.NewSharedInformerFactory(k8sClient, informerResyncPeriod)
 	_, err := factory.Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(_, newObj any) {
 			newNode, _ := newObj.(*corev1.Node)
@@ -218,6 +98,132 @@ func (n *Node) LoadImage(ociPath string) error {
 	return nil
 }
 
+func (n ControlPlaneNode) Deploy(manifest io.Reader) error {
+	r, err := n.RunCmd("microk8s kubectl apply -f - ", manifest)
+	if err != nil {
+		return fmt.Errorf("failed to apply manifest: %s", r)
+	}
+	return nil
+}
+
+func (n *ControlPlaneNode) getJoinCmd() (string, error) {
+	r, err := n.RunCmd("microk8s add-node", nil)
+	if err != nil {
+		return "", fmt.Errorf("couldn't get join URL from control plane node: %w", err)
+	}
+	ip, err := serverPublicIP(n.Server)
+	if err != nil {
+		return "", err
+	}
+
+	// parse the microk8s join invitation response message
+	// looking for public ip
+	joinCmd := ""
+	for line := range strings.Lines(r) {
+		if strings.Contains(line, ip) {
+			joinCmd = line[:len(line)-1] // strip newline
+		}
+	}
+	if joinCmd == "" {
+		return "", fmt.Errorf("no ip address in join cmd: %q", r)
+	}
+
+	return joinCmd, nil
+}
+
+// JoinAsControlPlane joins nn to the base node's cluster.
+// Blocks until the node is ready.
+// The base node's cluster MUST have the CCM running.
+func (n *ControlPlaneNode) JoinAsControlPlane(ctx context.Context, nn Node) (ControlPlaneNode, error) {
+	const timeout = 360 * time.Second
+
+	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errors.New("node join timeout"))
+	defer cancel()
+
+	joinCmd, err := n.getJoinCmd()
+	if err != nil {
+		return ControlPlaneNode{}, fmt.Errorf("couldn't get join cmd from control plane: %w", err)
+	}
+
+	_, err = nn.RunCmd(joinCmd, nil)
+	if err != nil {
+		return ControlPlaneNode{}, fmt.Errorf("couldn't execute join cmd: %w", err)
+	}
+
+	newNode := ControlPlaneNode{Node: nn}
+
+	newNode.addCpLabel(ctx)
+	kubeconfig, err := nn.RunCmd("microk8s config", nil)
+	if err != nil {
+		return ControlPlaneNode{}, fmt.Errorf("failed to get k8s config: %w", err)
+	}
+
+	newNode.K8sclient, err = newK8sClient(kubeconfig)
+	if err != nil {
+		return ControlPlaneNode{}, fmt.Errorf("failed to create k8s client: %w", err)
+	}
+
+	err = newNode.UntilHasProviderID(ctx, newNode.K8sclient)
+	if err != nil {
+		return ControlPlaneNode{}, fmt.Errorf("added node didn't get a provider ID: %w", err)
+	}
+
+	return newNode, nil
+}
+
+// JoinControlPlanesBatch wraps join to join multiple nodes to the base node
+// in a concurrent manner.
+func (n *ControlPlaneNode) JoinControlPlanesBatch(ctx context.Context, nodes []Node) ([]ControlPlaneNode, []error) {
+	type s struct {
+		err  error
+		node ControlPlaneNode
+	}
+
+	errs := make([]error, len(nodes))
+	newNodes := make([]ControlPlaneNode, len(nodes))
+	c := make(chan s, len(nodes))
+
+	for i := range len(nodes) {
+		go func() {
+			node, err := n.JoinAsControlPlane(ctx, nodes[i])
+			c <- s{err, node}
+		}()
+	}
+
+	for i := range len(nodes) {
+		r := <-c
+		errs[i] = r.err
+		newNodes[i] = r.node
+	}
+	return newNodes, errs
+}
+
+// Remove removes the provided node from the base node.
+func (n *ControlPlaneNode) Remove(nn Node) error {
+	resp, err := n.RunCmd("microk8s remove-node "+nn.Server.Hostname+" --force", nil)
+	if err != nil {
+		return fmt.Errorf("failed to remove node: %v: %s", err, resp)
+	}
+	return nil
+}
+
+// addCpLabel adds the well-known control plane label
+// to the node, since microk8s doesn't use it,
+// but we need it for fip reconciliation.
+func (n *ControlPlaneNode) addCpLabel(ctx context.Context) error {
+	ctx, cancel := context.WithTimeoutCause(ctx, 64*time.Second, fmt.Errorf("timed out on label apply for %s", n.Server.Hostname))
+	defer cancel()
+
+	return backoff.ExpBackoffWithContext(func() (bool, error) {
+		_, err := n.RunCmd("microk8s kubectl label nodes "+n.Server.Hostname+
+			" "+ControlPlaneNodeLabel+"=\"\"", nil)
+		if err != nil {
+			return false, nil
+		}
+		return true, nil
+	}, backoff.DefaultExpBackoffConfigWithContext(ctx))
+}
+
 type Microk8sNodeProvisioner struct {
 	cherryClient cherrygo.Client
 	projectID    int
@@ -227,7 +233,7 @@ type Microk8sNodeProvisioner struct {
 }
 
 // Provision creates a Cherry Servers server and waits for k8s to be running.
-func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (Node, error) {
+func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (ControlPlaneNode, error) {
 	const (
 		userDataPath  = "./testdata/init-microk8s.yaml"
 		k8sVersionVar = "K8S_VERSION"
@@ -239,19 +245,19 @@ func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (Node, error) {
 
 	userDataRaw, err := os.ReadFile(userDataPath)
 	if err != nil {
-		return Node{}, fmt.Errorf("failed to read user data file: %w", err)
+		return ControlPlaneNode{}, fmt.Errorf("failed to read user data file: %w", err)
 	}
 	userDataRaw = bytes.ReplaceAll(userDataRaw, []byte(k8sVersionVar), []byte(np.k8sVersion))
 	userdata := base64.StdEncoding.EncodeToString(userDataRaw)
 
 	srv, err := provisionServer(ctx, np.cherryClient, np.projectID, userdata, np.sshKeyID)
 	if err != nil {
-		return Node{}, fmt.Errorf("failed to provision server: %w", err)
+		return ControlPlaneNode{}, fmt.Errorf("failed to provision server: %w", err)
 	}
 
 	ip, err := serverPublicIP(srv)
 	if err != nil {
-		return Node{}, err
+		return ControlPlaneNode{}, err
 	}
 
 	err = backoff.ExpBackoffWithContext(func() (bool, error) {
@@ -263,37 +269,37 @@ func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (Node, error) {
 		return true, nil
 	}, backoff.DefaultExpBackoffConfigWithContext(ctx))
 	if err != nil {
-		return Node{}, fmt.Errorf("node kube-api didn't become reachable: %w", err)
+		return ControlPlaneNode{}, fmt.Errorf("node kube-api didn't become reachable: %w", err)
 	}
 
 	kubeconfig, err := np.cmdRunner.run(ip, "microk8s config", nil)
 	if err != nil {
-		return Node{}, fmt.Errorf("failed to get k8s config for node %q: %w", srv.Hostname, err)
+		return ControlPlaneNode{}, fmt.Errorf("failed to get k8s config for node %q: %w", srv.Hostname, err)
 	}
 
 	k8sclient, err := newK8sClient(kubeconfig)
 	if err != nil {
-		return Node{}, fmt.Errorf("failed to create k8s client for node %q: %w", srv.Hostname, err)
+		return ControlPlaneNode{}, fmt.Errorf("failed to create k8s client for node %q: %w", srv.Hostname, err)
 	}
 
-	n := Node{Server: srv, cmdRunner: np.cmdRunner, K8sclient: k8sclient}
+	n := ControlPlaneNode{Node: Node{Server: srv, cmdRunner: np.cmdRunner}, K8sclient: k8sclient}
 	n.addCpLabel(ctx)
 	err = np.untilProvisioned(ctx, n)
 	if err != nil {
-		return Node{}, fmt.Errorf("node didn't reach provisioned state: %w", err)
+		return ControlPlaneNode{}, fmt.Errorf("node didn't reach provisioned state: %w", err)
 	}
 	return n, nil
 }
 
 // ProvisionBatch wraps provision to create n Cherry Servers servers
 // in a concurrent manner.
-func (np Microk8sNodeProvisioner) ProvisionBatch(ctx context.Context, n int) ([]Node, []error) {
+func (np Microk8sNodeProvisioner) ProvisionBatch(ctx context.Context, n int) ([]ControlPlaneNode, []error) {
 	type p struct {
-		nn  Node
+		nn  ControlPlaneNode
 		err error
 	}
 
-	nodes := make([]Node, n)
+	nodes := make([]ControlPlaneNode, n)
 	errs := make([]error, n)
 	c := make(chan p, n)
 
@@ -314,7 +320,7 @@ func (np Microk8sNodeProvisioner) ProvisionBatch(ctx context.Context, n int) ([]
 
 // wait until node has provider ID or is tainted with
 // 'node.cloudprovider.kubernetes.io/uninitialized'
-func (np Microk8sNodeProvisioner) untilProvisioned(ctx context.Context, n Node) error {
+func (np Microk8sNodeProvisioner) untilProvisioned(ctx context.Context, n ControlPlaneNode) error {
 	const uninitTaint = "node.cloudprovider.kubernetes.io/uninitialized"
 	ctx, cancel := context.WithTimeout(ctx, informerTimeout)
 	provisioned := false
@@ -433,4 +439,14 @@ func provisionServer(ctx context.Context, cc cherrygo.Client, projectID int, use
 	}
 
 	return srv, nil
+}
+
+// ControlPlanesToNodes extracts embedded Node objects from
+// the ControlPlaneNode
+func ControlPlanesToNodes(cps []ControlPlaneNode) []Node {
+	nodes := make([]Node, len(cps))
+	for i, n := range cps {
+		nodes[i] = n.Node
+	}
+	return nodes
 }
