@@ -83,7 +83,7 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 
 	err = n.LoadImage(*ccmImagePath)
 	if err != nil {
-		t.Fatalf("failed to load image to node")
+		t.Fatalf("failed to load image to node: %v, from path: %q", err, *ccmImagePath)
 	}
 
 	deployCcm(ctx, t, n, ccm.Config{

@@ -7,9 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -412,27 +410,6 @@ func (k *kubeHelpers) untilLoadBalancerEnsured(ctx context.Context, lb corev1.Se
 
 }
 
-func fipsContainTags(fips []cherrygo.IPAddress, wantTags map[string]string) bool {
-	return slices.ContainsFunc(fips, func(fip cherrygo.IPAddress) bool {
-		if fip.Tags == nil {
-			return false
-		}
-		return maps.Equal(*fip.Tags, wantTags)
-	})
-}
-
-func assertFipTags(t testing.TB, fips []cherrygo.IPAddress, wantTags map[string]string) {
-	if !fipsContainTags(fips, wantTags) {
-		var b strings.Builder
-		for _, fip := range fips {
-			if fip.Type == "floating-ip" {
-				fmt.Fprintln(&b, *fip.Tags)
-			}
-		}
-		t.Errorf("fip tags: %s, want one %v", b.String(), wantTags)
-	}
-}
-
 type loadBalancerSubTester struct {
 	firstSvc  *corev1.Service
 	secondSvc *corev1.Service
@@ -448,11 +425,31 @@ func (s loadBalancerSubTester) testFipTags(ctx context.Context, t *testing.T) {
 			t.Fatalf("failed to get fips: %v", err)
 		}
 
-		wantTags := kubeHelper.loadBalancerFipTags(ctx, s.firstSvc)
-		assertFipTags(t, fips, wantTags)
+		var firstFip, secondFip cherrygo.IPAddress
+		for _, fip := range fips {
+			switch fip.Address {
+			case s.firstSvc.Status.LoadBalancer.Ingress[0].IP:
+				firstFip = fip
+			case s.secondSvc.Status.LoadBalancer.Ingress[0].IP:
+				secondFip = fip
+			}
+		}
 
-		wantTags = kubeHelper.loadBalancerFipTags(ctx, s.secondSvc)
-		assertFipTags(t, fips, wantTags)
+		want := kubeHelper.loadBalancerFipTags(ctx, s.firstSvc)
+		got := *firstFip.Tags
+		for k := range want {
+			if want[k] != got[k] {
+				t.Errorf("first svc fip tag %q: %q, want %q: %q", k, got[k], k, want[k])
+			}
+		}
+
+		want = kubeHelper.loadBalancerFipTags(ctx, s.secondSvc)
+		got = *secondFip.Tags
+		for k := range want {
+			if want[k] != got[k] {
+				t.Errorf("second svc fip tag %q: %q, want %q: %q", k, got[k], k, want[k])
+			}
+		}
 	})
 }
 
