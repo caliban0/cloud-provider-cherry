@@ -55,11 +55,11 @@ func (n Node) RunCmd(cmd string, stdin io.Reader) (resp string, err error) {
 	return n.cmdRunner.run(ip, cmd, stdin)
 }
 
-// Join joins newNode to the base node's cluster.
+// JoinAsControlPlane joins nn to the base node's cluster.
 // Blocks until the node is ready.
 // The base node MUST be a control plane node.
 // The base node's cluster MUST have the CCM running.
-func (n *Node) Join(ctx context.Context, nn Node) error {
+func (n *Node) JoinAsControlPlane(ctx context.Context, nn Node) error {
 	const timeout = 210 * time.Second
 
 	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errors.New("node join timeout"))
@@ -109,7 +109,7 @@ func (n *Node) JoinBatch(ctx context.Context, nodes []Node) []error {
 
 	for i := range len(nodes) {
 		go func() {
-			c <- n.Join(ctx, nodes[i])
+			c <- n.JoinAsControlPlane(ctx, nodes[i])
 		}()
 	}
 
