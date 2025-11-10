@@ -560,17 +560,7 @@ func (s loadBalancerSubTester) testDistinctIngressIps(t *testing.T) {
 
 }
 
-func fipCount(fips []cherrygo.IPAddress) int {
-	count := 0
-	for _, fip := range fips {
-		if fip.Type == "floating-ip" {
-			count++
-		}
-	}
-	return count
-}
-
-func untilFipCount(ctx context.Context, projectID, count int) error {
+func untilFipGone(ctx context.Context, projectID int, address string) error {
 	const timeout = time.Second * 90
 
 	fipRemovedCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -581,11 +571,12 @@ func untilFipCount(ctx context.Context, projectID, count int) error {
 		if err != nil {
 			return false, fmt.Errorf("failed to get ips: %w", err)
 		}
-
-		c := fipCount(fips)
-		if c != count {
-			return false, nil
+		for _, fip := range fips {
+			if fip.Address == address {
+				return false, nil
+			}
 		}
+
 		return true, nil
 	}, backoff.DefaultExpBackoffConfigWithContext(fipRemovedCtx))
 }
@@ -659,16 +650,17 @@ func TestMetalLB(t *testing.T) {
 	subtester.testProjectBgpEnabled(t)
 	subtester.testDistinctIngressIps(t)
 
-	t.Run("remove first service", func(t *testing.T) {
-		secondSvcIP := secondSvc.Status.LoadBalancer.Ingress[0].IP
+	firstSvcIP := firstSvc.Status.LoadBalancer.Ingress[0].IP
+	secondSvcIP := secondSvc.Status.LoadBalancer.Ingress[0].IP
 
+	t.Run("remove first service", func(t *testing.T) {
 		err := env.k8sClient.CoreV1().Services(namespace).Delete(ctx, firstSvc.Name, metav1.DeleteOptions{})
 		if err != nil {
 			t.Fatalf("failed to delete service %q: %v", firstSvc.Name, err)
 		}
-		err = untilFipCount(ctx, env.project.ID, 1)
+		err = untilFipGone(ctx, env.project.ID, firstSvcIP)
 		if err != nil {
-			t.Errorf("fip count not reduced after service removal: %v", err)
+			t.Errorf("fip not removed: %v", err)
 		}
 
 		secondSvc, err = env.k8sClient.CoreV1().Services(namespace).Get(ctx, secondSvc.Name, metav1.GetOptions{})
@@ -687,9 +679,9 @@ func TestMetalLB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to delete service %q: %v", secondSvc.Name, err)
 		}
-		err = untilFipCount(ctx, env.project.ID, 0)
+		err = untilFipGone(ctx, env.project.ID, secondSvcIP)
 		if err != nil {
-			t.Errorf("fip count not reduced after service removal: %v", err)
+			t.Errorf("fip not removed: %v", err)
 		}
 	})
 
@@ -753,16 +745,18 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 	subtester.testProjectBgpEnabled(t)
 	subtester.testNodeHasAnnotations(ctx, t)
 
+	firstSvcIP := firstSvc.Status.LoadBalancer.Ingress[0].IP
+	secondSvcIP := secondSvc.Status.LoadBalancer.Ingress[0].IP
+
 	t.Run("remove first service", func(t *testing.T) {
-		secondSvcIP := secondSvc.Status.LoadBalancer.Ingress[0].IP
 
 		err := env.k8sClient.CoreV1().Services(namespace).Delete(ctx, firstSvc.Name, metav1.DeleteOptions{})
 		if err != nil {
 			t.Fatalf("failed to delete service %q: %v", firstSvc.Name, err)
 		}
-		err = untilFipCount(ctx, env.project.ID, 1)
+		err = untilFipGone(ctx, env.project.ID, firstSvcIP)
 		if err != nil {
-			t.Errorf("fip count not reduced after service removal: %v", err)
+			t.Errorf("fip not removed: %v", err)
 		}
 
 		secondSvc, err = env.k8sClient.CoreV1().Services(namespace).Get(ctx, secondSvc.Name, metav1.GetOptions{})
@@ -783,9 +777,9 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to delete service %q: %v", secondSvc.Name, err)
 		}
-		err = untilFipCount(ctx, env.project.ID, 0)
+		err = untilFipGone(ctx, env.project.ID, secondSvcIP)
 		if err != nil {
-			t.Errorf("fip count not reduced after service removal: %v", err)
+			t.Errorf("fip not removed: %v", err)
 		}
 
 		subtester.testNodeDoesntHaveAnnotations(ctx, t)
