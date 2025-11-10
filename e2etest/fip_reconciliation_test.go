@@ -59,15 +59,16 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 			t.Fatalf("failed to provision node: %v", err)
 		}
 	}
-	cp1 := nodes[0]
-	cp2 := nodes[1]
 
-	errs = env.mainNode.JoinBatch(ctx, []node.Node{cp1, cp2})
+	nodes, errs = env.mainNode.JoinBatch(ctx, nodes)
 	for _, err := range errs {
 		if err != nil {
 			t.Fatalf("failed to join node: %v", err)
 		}
 	}
+
+	cp1 := nodes[0]
+	cp2 := nodes[1]
 
 	// test that fip remains attached to node after deleting another node
 	_, _, err = cherryClient.Servers.Delete(cp1.Server.ID)
