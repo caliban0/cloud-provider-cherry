@@ -236,7 +236,13 @@ func (n *ControlPlaneNode) JoinControlPlanesBatch(ctx context.Context, nodes []N
 
 // Remove removes the provided node from the base node.
 func (n *ControlPlaneNode) Remove(nn Node) error {
-	resp, err := n.runCmd("microk8s remove-node "+nn.Server.Hostname+" --force", nil)
+	resp, err := nn.runCmd("microk8s leave", nil)
+	if err != nil {
+		return fmt.Errorf("node %q failed \"leave\" command, resp: %q, with error: %v ",
+			nn.Server.Hostname, resp, err)
+	}
+
+	resp, err = n.runCmd("microk8s remove-node "+nn.Server.Hostname, nil)
 	if err != nil {
 		return fmt.Errorf("failed to remove node: %v: %s", err, resp)
 	}
