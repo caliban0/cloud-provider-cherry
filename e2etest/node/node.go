@@ -20,6 +20,8 @@ import (
 
 	"github.com/cherryservers/cloud-provider-cherry-tests/backoff"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -165,13 +167,13 @@ func (n *ControlPlaneNode) JoinAsControlPlane(ctx context.Context, nn Node) (Con
 	if err != nil {
 		return ControlPlaneNode{}, fmt.Errorf("failed to execute join cmd: %w", err)
 	}
-	newNode := ControlPlaneNode{Node: nn}
 
-	newNode.addCpLabel(ctx)
 	kubeconfig, err := nn.runCmd("microk8s config", nil)
 	if err != nil {
 		return ControlPlaneNode{}, fmt.Errorf("failed to get k8s config: %w", err)
 	}
+
+	newNode := ControlPlaneNode{Node: nn}
 
 	newNode.K8sclient, err = newK8sClient(kubeconfig)
 	if err != nil {
@@ -181,6 +183,11 @@ func (n *ControlPlaneNode) JoinAsControlPlane(ctx context.Context, nn Node) (Con
 	err = newNode.UntilHasProviderID(ctx, newNode.K8sclient)
 	if err != nil {
 		return ControlPlaneNode{}, fmt.Errorf("added node didn't get a provider ID: %w", err)
+	}
+
+	err = addCpLabel(ctx, n.K8sclient, nn)
+	if err != nil {
+		return ControlPlaneNode{}, fmt.Errorf("failed to add control plane label: %w", err)
 	}
 
 	return newNode, nil
@@ -252,18 +259,19 @@ func (n *ControlPlaneNode) Remove(nn Node) error {
 // addCpLabel adds the well-known control plane label
 // to the node, since microk8s doesn't use it,
 // but we need it for fip reconciliation.
-func (n *ControlPlaneNode) addCpLabel(ctx context.Context) error {
+func addCpLabel(ctx context.Context, client kubernetes.Interface, n Node) error {
 	ctx, cancel := context.WithTimeoutCause(ctx, 64*time.Second, fmt.Errorf("timed out on label apply for %s", n.Server.Hostname))
 	defer cancel()
 
-	return backoff.ExpBackoffWithContext(func() (bool, error) {
-		_, err := n.runCmd("microk8s kubectl label nodes "+n.Server.Hostname+
-			" "+ControlPlaneNodeLabel+"=\"\"", nil)
-		if err != nil {
-			return false, nil
-		}
-		return true, nil
-	}, backoff.DefaultExpBackoffConfigWithContext(ctx))
+	_, err := client.CoreV1().Nodes().Patch(
+		ctx,
+		n.Server.Hostname,
+		types.MergePatchType,
+		fmt.Appendf(nil, `{"metadata":{"labels":{"%s":""}}}`, ControlPlaneNodeLabel),
+		metav1.PatchOptions{},
+	)
+
+	return err
 }
 
 type Microk8sNodeProvisioner struct {
@@ -325,11 +333,17 @@ func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (ControlPlaneNo
 	}
 
 	n := ControlPlaneNode{Node: Node{Server: srv, cmdRunner: np.cmdRunner}, K8sclient: k8sclient}
-	n.addCpLabel(ctx)
+
 	err = np.untilProvisioned(ctx, n)
 	if err != nil {
 		return ControlPlaneNode{}, fmt.Errorf("node didn't reach provisioned state: %w", err)
 	}
+
+	err = addCpLabel(ctx, k8sclient, n.Node)
+	if err != nil {
+		return ControlPlaneNode{}, fmt.Errorf("failed to add control plane label: %w", err)
+	}
+
 	return n, nil
 }
 
