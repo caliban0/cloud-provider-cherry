@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"slices"
 	"testing"
 	"time"
 
@@ -12,7 +14,7 @@ import (
 	"github.com/cherryservers/cloud-provider-cherry-tests/node"
 )
 
-func untilIPHasTarget(ctx context.Context, ip cherrygo.IPAddress, target string) error {
+func untilIPHasTarget(ctx context.Context, ip cherrygo.IPAddress, target ...string) error {
 	const timeout = 180 * time.Second
 	ctx, cancel := context.WithTimeoutCause(
 		ctx, timeout, errors.New("timeout out waiting for ip to get target"))
@@ -23,7 +25,7 @@ func untilIPHasTarget(ctx context.Context, ip cherrygo.IPAddress, target string)
 		if err != nil {
 			return false, fmt.Errorf("failed to get fip: %w", err)
 		}
-		if fip.TargetedTo.Hostname == target {
+		if slices.Contains(target, fip.TargetedTo.Hostname) {
 			return true, nil
 		}
 		return false, nil
@@ -53,7 +55,9 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		t.Fatalf("fip %s didn't get attached to cp node: %v", fip.ID, err)
 	}
 
-	nodes, errs := np.ProvisionBatch(ctx, 2)
+	// Provision enough nodes, so that we don't fall below two for the cluster,
+	// otherwise dqlite quorum breaks.
+	nodes, errs := np.ProvisionBatch(ctx, 3)
 	for _, err := range errs {
 		if err != nil {
 			t.Fatalf("failed to provision node: %v", err)
@@ -69,6 +73,9 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 
 	cp1 := nodes[0]
 	cp2 := nodes[1]
+	cp3 := nodes[2]
+
+	wantTarget := env.mainNode.Server.Hostname
 
 	// test that fip remains attached to node after deleting another node
 	_, _, err = cherryClient.Servers.Delete(cp1.Server.ID)
@@ -76,23 +83,39 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		t.Fatalf("failed to delete server %q: %v", cp1.Server.Hostname, err)
 	}
 
+	k8sn, err := env.k8sClient.CoreV1().Nodes().Get(ctx, cp1.Server.Hostname, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("failed to get node: %v", err)
+	}
+	untilNodeGone(ctx, *k8sn, env.k8sClient)
+
 	fip, _, err = cherryClient.IPAddresses.Get(fip.ID, nil)
 	if err != nil {
 		t.Fatalf("failed to get fip %s: %v", fip.ID, err)
 	}
-	if fip.TargetedTo.Hostname != env.mainNode.Server.Hostname {
-		t.Fatalf("fip %s target: %q, want %q", fip.ID, fip.TargetedTo.Hostname, env.mainNode.Server.Hostname)
+	if fip.TargetedTo.Hostname != wantTarget {
+		t.Fatalf("fip %s target: %q, want %q", fip.ID, fip.TargetedTo.Hostname, wantTarget)
 	}
 
 	// test that fip is reattached when a cp node is disabled
-	err = cp2.Remove(env.mainNode.Node)
+
+	// Reassign the FIP, so that we don't have to delete the main node,
+	// since the main node is the one that the CCM is running on.
+	_, _, err = cherryClient.IPAddresses.Assign(fip.ID, &cherrygo.AssignIPAddress{ServerID: cp2.Server.ID})
+	if err != nil {
+		t.Fatalf("failed to re-assign ip %s: %v", fip.ID, err)
+	}
+
+	err = env.mainNode.Remove(cp2.Node)
 	if err != nil {
 		t.Fatalf("couldn't remove node from cluster: %v", err)
 	}
 
-	err = untilIPHasTarget(ctx, fip, cp2.Server.Hostname)
+	wantTargets := []string{wantTarget, cp3.Server.Hostname}
+
+	err = untilIPHasTarget(ctx, fip, wantTargets...)
 	if err != nil {
-		t.Fatalf("fip %s didn't get attached to cp node %q: %v", fip.ID, cp2.Server.Hostname, err)
+		t.Fatalf("fip %s didn't get attached to cp nodes %v: %v", fip.ID, wantTargets, err)
 	}
 
 }
