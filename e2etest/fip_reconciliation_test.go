@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"net/http"
 	"slices"
 	"testing"
 	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/cherryservers/cherrygo/v3"
 	"github.com/cherryservers/cloud-provider-cherry-tests/backoff"
@@ -121,5 +123,15 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fip %s didn't get attached to cp nodes %v: %v", fip.ID, wantTargets, err)
 	}
+	t.Run("fip reachable", func(t *testing.T) {
+		resp, err := http.Get(fmt.Sprintf("http://%s:%d", fip.Address, node.APIPort))
+		if err != nil {
+			t.Fatalf("failed get request to %s:%d:%v ", fip.Address, node.APIPort, err)
+		}
+
+		if got, want := resp.StatusCode, http.StatusForbidden; got != want {
+			t.Errorf("response status %d, want %d", got, want)
+		}
+	})
 
 }
