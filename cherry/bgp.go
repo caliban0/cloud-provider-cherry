@@ -83,6 +83,13 @@ func (b *bgp) ensureNodeBGPEnabled(providerID string) (NodeBGPInfo, error) {
 	if err != nil {
 		return NodeBGPInfo{}, fmt.Errorf("error getting server %d: %v", id, err)
 	}
+
+	project, _, err := b.client.Projects.Get(b.project, nil)
+	if err != nil {
+		return NodeBGPInfo{}, fmt.Errorf("error getting project %d: %v", b.project, err)
+	}
+	b.localASN = project.Bgp.LocalASN
+
 	// already configured? just return nil
 	if server.BGP.Enabled {
 		// get the BGP info on the server
