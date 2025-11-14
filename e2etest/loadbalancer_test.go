@@ -581,6 +581,22 @@ func (s loadBalancerSubTester) testSecondServiceRemoval(ctx context.Context,
 	})
 }
 
+func (s loadBalancerSubTester) testFirstServiceReachable(t *testing.T) {
+	t.Run("first service reachable", func(t *testing.T) {
+		ip := s.firstSvc.Status.LoadBalancer.Ingress[0].IP
+		port := &s.firstSvc.Spec.Ports[0]
+		resp, err := http.Get(fmt.Sprintf("%s:%s", ip, port))
+		if err != nil {
+			t.Errorf("failed to get from service at %s:%s :%v", ip, port, err)
+		}
+		if got, want := resp.StatusCode, http.StatusOK; got != want {
+			t.Errorf("status code %d, want %d", got, want)
+		}
+		resp.Body.Close()
+	})
+
+}
+
 func newLoadBalancerSubTester(ctx context.Context,
 	kubeHelper kubeHelpers,
 	env *testEnv,
@@ -691,6 +707,7 @@ func TestMetalLB(t *testing.T) {
 	subtester.testServerBgpEnabled(t)
 	subtester.testProjectBgpEnabled(t)
 	subtester.testDistinctIngressIps(t)
+	subtester.testFirstServiceReachable(t)
 
 	subtester.testFirstServiceRemoval(ctx, t, namespace)
 	subtester.testSecondServiceRemoval(ctx, t, namespace)
@@ -743,6 +760,7 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 	subtester.testProjectBgpEnabled(t)
 	subtester.testNodeHasAnnotations(ctx, t)
 	subtester.testDistinctIngressIps(t)
+	subtester.testFirstServiceReachable(t)
 
 	subtester.testFirstServiceRemoval(ctx, t, namespace)
 	subtester.testSecondServiceRemoval(ctx, t, namespace)
