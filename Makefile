@@ -79,6 +79,11 @@ endif
 GOBIN ?= $(shell go env GOPATH)/bin
 LINTER ?= $(GOBIN)/golangci-lint
 
+E2E_TEST_BUILDX_BUILDER ?= container
+E2E_TEST_IMAGE_DEST ?= tmp/ccm-test.tar
+E2E_TEST_PLATFORMS ?= linux/amd64,linux/arm64
+E2E_TEST_TAG = ghcr.io/cherryservers/cloud-provider-cherry:test
+
 .PHONY: fmt lint test tag version
 
 $(DIST_DIR):
@@ -117,6 +122,22 @@ cherryctl:
 ## If no kubeconfig is specified, it deploys a cluster for you
 test_integration: cherryctl
 	@./test/test.sh
+
+## Create a buildx builder that can build multi-platform images
+buildx-builder:
+	docker buildx create --name $(E2E_TEST_BUILDX_BUILDER) --driver=docker-container
+
+## Build OCI image .tar bundle for testing
+build-test-image:
+	docker buildx build \
+	--platform $(E2E_TEST_PLATFORMS) \
+	--builder $(E2E_TEST_BUILDX_BUILDER) \
+	-t $(E2E_TEST_TAG) \
+	--output type=oci,dest=$(E2E_TEST_IMAGE_DEST) .
+
+## See e2etest/README.md for instructions.
+test-e2e:
+	cd e2etest && go test ./...
 
 help: ## Display this help screen
 	@printf "\033[36m%s\n" "For all commands that can be used with one or more OS architecture, set the target architecture with ARCH= and the OS with OS="
