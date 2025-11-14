@@ -292,7 +292,7 @@ func (k *kubeHelpers) setupKubeVip(ctx context.Context, cfg kubeVipConfig) {
 	}
 }
 
-func (k *kubeHelpers) setupNginx(ctx context.Context, namespace string) *appsv1.Deployment {
+func (k *kubeHelpers) setupNginx(ctx context.Context, namespace string, targetPort int32) *appsv1.Deployment {
 	k.t.Helper()
 	replicas := int32(2)
 
@@ -317,7 +317,7 @@ func (k *kubeHelpers) setupNginx(ctx context.Context, namespace string) *appsv1.
 							Image: "nginx:1.29.2",
 							Ports: []corev1.ContainerPort{
 								{
-									ContainerPort: 80,
+									ContainerPort: targetPort,
 								},
 							},
 						},
@@ -342,7 +342,7 @@ type loadBalancerConfig struct {
 	selector  map[string]string
 }
 
-func (k *kubeHelpers) setupLoadBalancer(ctx context.Context, cfg loadBalancerConfig) *corev1.Service {
+func (k *kubeHelpers) setupLoadBalancer(ctx context.Context, cfg loadBalancerConfig, targetPort int) *corev1.Service {
 	lb := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: cfg.name,
@@ -352,7 +352,7 @@ func (k *kubeHelpers) setupLoadBalancer(ctx context.Context, cfg loadBalancerCon
 			Ports: []corev1.ServicePort{
 				{
 					Port:       8765,
-					TargetPort: intstr.FromInt(9376),
+					TargetPort: intstr.FromInt(targetPort),
 				},
 			},
 			Type: corev1.ServiceTypeLoadBalancer,
@@ -581,26 +581,46 @@ func (s loadBalancerSubTester) testSecondServiceRemoval(ctx context.Context,
 	})
 }
 
+func (s loadBalancerSubTester) testFirstServiceReachable(t *testing.T) {
+	t.Run("first service reachable", func(t *testing.T) {
+		ip := s.firstSvc.Status.LoadBalancer.Ingress[0].IP
+		port := s.firstSvc.Spec.Ports[0].Port
+		resp, err := http.Get(fmt.Sprintf("http://%s:%d", ip, port))
+		if err != nil {
+			t.Fatalf("failed to get from service :%v", err)
+		}
+		if got, want := resp.StatusCode, http.StatusOK; got != want {
+			t.Errorf("status code %d, want %d", got, want)
+		}
+		resp.Body.Close()
+	})
+
+}
+
 func newLoadBalancerSubTester(ctx context.Context,
 	kubeHelper kubeHelpers,
 	env *testEnv,
 	namespace string) loadBalancerSubTester {
-	testDeployment := kubeHelper.setupNginx(ctx, namespace)
+	const targetPort = 80
+
+	testDeployment := kubeHelper.setupNginx(ctx, namespace, targetPort)
 	selector := testDeployment.Spec.Selector.MatchLabels
 
-	firstSvc := kubeHelper.setupLoadBalancer(ctx, loadBalancerConfig{
-		name:      "example-service-1",
-		namespace: namespace,
-		selector:  selector,
-	})
+	firstSvc := kubeHelper.setupLoadBalancer(ctx,
+		loadBalancerConfig{
+			name:      "example-service-1",
+			namespace: namespace,
+			selector:  selector,
+		}, targetPort)
 
 	*firstSvc = kubeHelper.untilLoadBalancerEnsured(ctx, *firstSvc, namespace)
 
-	secondSvc := kubeHelper.setupLoadBalancer(ctx, loadBalancerConfig{
-		name:      "example-service-2",
-		namespace: namespace,
-		selector:  selector,
-	})
+	secondSvc := kubeHelper.setupLoadBalancer(ctx,
+		loadBalancerConfig{
+			name:      "example-service-2",
+			namespace: namespace,
+			selector:  selector,
+		}, targetPort)
 
 	*secondSvc = kubeHelper.untilLoadBalancerEnsured(ctx, *secondSvc, namespace)
 
@@ -694,6 +714,7 @@ func TestMetalLB(t *testing.T) {
 	subtester.testServerBgpEnabled(t)
 	subtester.testProjectBgpEnabled(t)
 	subtester.testDistinctIngressIps(t)
+	subtester.testFirstServiceReachable(t)
 
 	subtester.testFirstServiceRemoval(ctx, t, namespace)
 	subtester.testSecondServiceRemoval(ctx, t, namespace)
@@ -746,6 +767,7 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 	subtester.testProjectBgpEnabled(t)
 	subtester.testNodeHasAnnotations(ctx, t)
 	subtester.testDistinctIngressIps(t)
+	subtester.testFirstServiceReachable(t)
 
 	subtester.testFirstServiceRemoval(ctx, t, namespace)
 	subtester.testSecondServiceRemoval(ctx, t, namespace)
