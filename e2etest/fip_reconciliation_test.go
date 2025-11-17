@@ -87,7 +87,11 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get node: %v", err)
 	}
-	untilNodeGone(ctx, *k8sn, env.k8sClient)
+
+	err = untilNodeGone(ctx, *k8sn, env.k8sClient)
+	if err != nil {
+		t.Fatalf("node %q didn't get deleted: %v", k8sn.Name, err)
+	}
 
 	fip, _, err = cherryClient.IPAddresses.Get(fip.ID, nil)
 	if err != nil {
