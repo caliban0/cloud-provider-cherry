@@ -681,7 +681,10 @@ func TestMetalLB(t *testing.T) {
 		t.Fatalf("failed to join node: %v", err)
 	}
 
-	env.mainNode.Deploy(getMetalLBManifest(ctx, t, *metalLBVersion))
+	err = env.mainNode.Deploy(getMetalLBManifest(ctx, t, *metalLBVersion))
+	if err != nil {
+		t.Fatalf("failed to deploy metallb: %v", err)
+	}
 
 	kubeHelper := kubeHelpers{t, env.k8sClient}
 
