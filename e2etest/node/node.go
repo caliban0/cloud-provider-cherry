@@ -31,7 +31,7 @@ const (
 	APIPort               = 16443 // default microk8s kube-api port
 	ControlPlaneNodeLabel = "node-role.kubernetes.io/control-plane"
 	informerResyncPeriod  = 5 * time.Second
-	informerTimeout       = 120 * time.Second
+	informerTimeout       = 300 * time.Second
 	joinTimeout           = 360 * time.Second
 )
 
@@ -288,7 +288,7 @@ func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (ControlPlaneNo
 	const (
 		userDataPath  = "./testdata/init-microk8s.yaml"
 		k8sVersionVar = "K8S_VERSION"
-		timeout       = 513 * time.Second
+		timeout       =  15 * time.Minute
 	)
 
 	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errors.New("node provision timeout"))
@@ -311,21 +311,9 @@ func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (ControlPlaneNo
 		return ControlPlaneNode{}, err
 	}
 
-	err = backoff.ExpBackoffWithContext(func() (bool, error) {
-		// Check if kube-api is reachable. Non-zero exit code will be returned if not.
-		_, err = np.cmdRunner.run(ip, "microk8s kubectl get nodes --no-headers", nil)
-		if err != nil {
-			return false, nil
-		}
-		return true, nil
-	}, backoff.DefaultExpBackoffConfigWithContext(ctx))
+	kubeconfig, err := np.untilKubernetesReady(ctx, ip)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("node kube-api didn't become reachable: %w", err)
-	}
-
-	kubeconfig, err := np.cmdRunner.run(ip, "microk8s config", nil)
-	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("failed to get k8s config for node %q: %w", srv.Hostname, err)
+		return ControlPlaneNode{}, fmt.Errorf("failed to establish connection to k8s on node %q: %w", srv.Hostname, err)
 	}
 
 	k8sclient, err := newK8sClient(kubeconfig)
@@ -346,6 +334,31 @@ func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (ControlPlaneNo
 	}
 
 	return n, nil
+}
+
+// returns kubeconfig
+func (np Microk8sNodeProvisioner) untilKubernetesReady(ctx context.Context, ip string) (string, error) {
+	const timeout = time.Minute * 5
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	err := backoff.ExpBackoffWithContext(func() (bool, error) {
+		// Check if kube-api is reachable. Non-zero exit code will be returned if not.
+		_, err := np.cmdRunner.run(ip, "microk8s kubectl get nodes --no-headers", nil)
+		if err != nil {
+			return false, nil
+		}
+		return true, nil
+	}, backoff.DefaultExpBackoffConfigWithContext(ctx))
+	if err != nil {
+		return "", fmt.Errorf("node kube-api didn't become reachable: %w", err)
+	}
+
+	kubeconfig, err := np.cmdRunner.run(ip, "microk8s config", nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to get kubeconfig %w", err)
+	}
+	return kubeconfig, nil
 }
 
 // ProvisionBatch wraps provision to create n Cherry Servers servers
@@ -466,7 +479,11 @@ func provisionServer(ctx context.Context, cc cherrygo.Client, projectID int, use
 	const (
 		serverImage = "ubuntu_24_04_64bit"
 		serverPlan  = "B1-4-4gb-80s-shared"
+		timeout = time.Minute * 7
 	)
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	srv, _, err := cc.Servers.Create(&cherrygo.CreateServer{
 		ProjectID: projectID,
