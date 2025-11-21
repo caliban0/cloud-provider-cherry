@@ -137,7 +137,10 @@ func deployCcm(ctx context.Context, t testing.TB, n node.ControlPlaneNode, cfg c
 
 	// when node.cloudprovider.kubernetes.io/uninitialized
 	// is gone, the ccm is running.
-	n.UntilHasProviderID(ctx, n.K8sclient)
+	err = n.UntilHasProviderID(ctx, n.K8sclient)
+	if err != nil {
+		t.Fatalf("node %q didn't get provider ID: %v", n.Server.Hostname, err)
+	}
 }
 
 func beforeTimeoutCtx(t *testing.T) (context.Context, context.CancelFunc) {
