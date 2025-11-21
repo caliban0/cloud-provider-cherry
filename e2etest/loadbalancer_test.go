@@ -256,7 +256,7 @@ func (k *kubeHelpers) setupKubeVip(ctx context.Context, cfg kubeVipConfig) {
 									},
 								},
 								{
-									Name: "bgp_multihop",
+									Name:  "bgp_multihop",
 									Value: "true",
 								},
 							},

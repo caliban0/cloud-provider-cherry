@@ -53,7 +53,7 @@ The following controllers are tested: instance, load balancer (with `kube-vip` a
    - Cluster ID
    - Service (SHA256 of namespace and name)
    - Usage (Cherry Servers cloud provider)
-5. Check that the nodes that host the services and the project have BGP enabled (BGP enabling functionality).
+5. Check that the project and the nodes that host the services have BGP enabled (BGP enabling functionality).
 6. Check that each service has a distinct Ingress IP.
 7. Check that a service is reachable (with an HTTP request).
 8. Delete the first service and check that:

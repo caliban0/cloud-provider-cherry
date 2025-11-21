@@ -288,7 +288,7 @@ func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (ControlPlaneNo
 	const (
 		userDataPath  = "./testdata/init-microk8s.yaml"
 		k8sVersionVar = "K8S_VERSION"
-		timeout       =  15 * time.Minute
+		timeout       = 15 * time.Minute
 	)
 
 	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errors.New("node provision timeout"))
@@ -479,7 +479,7 @@ func provisionServer(ctx context.Context, cc cherrygo.Client, projectID int, use
 	const (
 		serverImage = "ubuntu_24_04_64bit"
 		serverPlan  = "B1-4-4gb-80s-shared"
-		timeout = time.Minute * 7
+		timeout     = time.Minute * 7
 	)
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
