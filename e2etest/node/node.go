@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cherryservers/cherrygo/v3"
@@ -43,6 +44,7 @@ type Node struct {
 type ControlPlaneNode struct {
 	Node
 	K8sclient kubernetes.Interface
+	mu        sync.Mutex
 }
 
 type WorkerNode struct {
@@ -106,7 +108,7 @@ func (n *Node) LoadImage(ociPath string) error {
 	return nil
 }
 
-func (n ControlPlaneNode) Deploy(manifest io.Reader) error {
+func (n *ControlPlaneNode) Deploy(manifest io.Reader) error {
 	r, err := n.runCmd("microk8s kubectl apply -f - ", manifest)
 	if err != nil {
 		return fmt.Errorf("failed to apply manifest: %s", r)
@@ -160,38 +162,38 @@ func (n *ControlPlaneNode) join(nn Node, worker bool) error {
 // JoinAsControlPlane joins nn to the base node's cluster as a CP node.
 // Blocks until the node is ready.
 // The base node's cluster MUST have the CCM running.
-func (n *ControlPlaneNode) JoinAsControlPlane(ctx context.Context, nn Node) (ControlPlaneNode, error) {
+func (n *ControlPlaneNode) JoinAsControlPlane(ctx context.Context, nn Node) (*ControlPlaneNode, error) {
 	ctx, cancel := context.WithTimeoutCause(ctx, joinTimeout, errors.New("node join timeout"))
 	defer cancel()
 
 	err := n.join(nn, false)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("failed to execute join cmd: %w", err)
+		return nil, fmt.Errorf("failed to execute join cmd: %w", err)
 	}
 
 	kubeconfig, err := nn.runCmd("microk8s config", nil)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("failed to get k8s config: %w", err)
+		return nil, fmt.Errorf("failed to get k8s config: %w", err)
 	}
 
 	newNode := ControlPlaneNode{Node: nn}
 
 	newNode.K8sclient, err = newK8sClient(kubeconfig)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("failed to create k8s client: %w", err)
+		return nil, fmt.Errorf("failed to create k8s client: %w", err)
 	}
 
 	err = newNode.UntilHasProviderID(ctx, newNode.K8sclient)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("added node didn't get a provider ID: %w", err)
+		return nil, fmt.Errorf("added node didn't get a provider ID: %w", err)
 	}
 
-	err = addCpLabel(ctx, n.K8sclient, nn)
+	err = newNode.addCpLabel(ctx)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("failed to add control plane label: %w", err)
+		return nil, fmt.Errorf("failed to add control plane label: %w", err)
 	}
 
-	return newNode, nil
+	return &newNode, nil
 }
 
 // JoinAsWorker joins nn to the base node's cluster as a worker.
@@ -217,14 +219,14 @@ func (n *ControlPlaneNode) JoinAsWorker(ctx context.Context, nn Node) (WorkerNod
 
 // JoinControlPlanesBatch wraps join to join multiple nodes to the base node
 // in a concurrent manner.
-func (n *ControlPlaneNode) JoinControlPlanesBatch(ctx context.Context, nodes []Node) ([]ControlPlaneNode, []error) {
+func (n *ControlPlaneNode) JoinControlPlanesBatch(ctx context.Context, nodes []Node) ([]*ControlPlaneNode, []error) {
 	type s struct {
 		err  error
-		node ControlPlaneNode
+		node *ControlPlaneNode
 	}
 
 	errs := make([]error, len(nodes))
-	newNodes := make([]ControlPlaneNode, len(nodes))
+	newNodes := make([]*ControlPlaneNode, len(nodes))
 	c := make(chan s, len(nodes))
 
 	for i := range len(nodes) {
@@ -260,17 +262,19 @@ func (n *ControlPlaneNode) Remove(nn Node) error {
 // addCpLabel adds the well-known control plane label
 // to the node, since microk8s doesn't use it,
 // but we need it for fip reconciliation.
-func addCpLabel(ctx context.Context, client kubernetes.Interface, n Node) error {
+func (n *ControlPlaneNode) addCpLabel(ctx context.Context) error {
 	ctx, cancel := context.WithTimeoutCause(ctx, 64*time.Second, fmt.Errorf("timed out on label apply for %s", n.Server.Hostname))
 	defer cancel()
 
-	_, err := client.CoreV1().Nodes().Patch(
+	n.mu.Lock()
+	_, err := n.K8sclient.CoreV1().Nodes().Patch(
 		ctx,
 		n.Server.Hostname,
 		types.MergePatchType,
 		fmt.Appendf(nil, `{"metadata":{"labels":{"%s":""}}}`, ControlPlaneNodeLabel),
 		metav1.PatchOptions{},
 	)
+	n.mu.Unlock()
 
 	return err
 }
@@ -284,7 +288,7 @@ type Microk8sNodeProvisioner struct {
 }
 
 // Provision creates a Cherry Servers server and waits for k8s to be running.
-func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (ControlPlaneNode, error) {
+func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (*ControlPlaneNode, error) {
 	const (
 		userDataPath  = "./testdata/init-microk8s.yaml"
 		k8sVersionVar = "K8S_VERSION"
@@ -296,44 +300,44 @@ func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (ControlPlaneNo
 
 	userDataRaw, err := os.ReadFile(userDataPath)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("failed to read user data file: %w", err)
+		return nil, fmt.Errorf("failed to read user data file: %w", err)
 	}
 	userDataRaw = bytes.ReplaceAll(userDataRaw, []byte(k8sVersionVar), []byte(np.k8sVersion))
 	userdata := base64.StdEncoding.EncodeToString(userDataRaw)
 
 	srv, err := provisionServer(ctx, np.cherryClient, np.projectID, userdata, np.sshKeyID)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("failed to provision server: %w", err)
+		return nil, fmt.Errorf("failed to provision server: %w", err)
 	}
 
 	ip, err := serverPublicIP(srv)
 	if err != nil {
-		return ControlPlaneNode{}, err
+		return nil, err
 	}
 
 	kubeconfig, err := np.untilKubernetesReady(ctx, ip)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("failed to establish connection to k8s on node %q: %w", srv.Hostname, err)
+		return nil, fmt.Errorf("failed to establish connection to k8s on node %q: %w", srv.Hostname, err)
 	}
 
 	k8sclient, err := newK8sClient(kubeconfig)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("failed to create k8s client for node %q: %w", srv.Hostname, err)
+		return nil, fmt.Errorf("failed to create k8s client for node %q: %w", srv.Hostname, err)
 	}
 
 	n := ControlPlaneNode{Node: Node{Server: srv, cmdRunner: np.cmdRunner}, K8sclient: k8sclient}
 
-	err = np.untilProvisioned(ctx, n)
+	err = np.untilProvisioned(ctx, &n)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("node didn't reach provisioned state: %w", err)
+		return nil, fmt.Errorf("node didn't reach provisioned state: %w", err)
 	}
 
-	err = addCpLabel(ctx, k8sclient, n.Node)
+	err = n.addCpLabel(ctx)
 	if err != nil {
-		return ControlPlaneNode{}, fmt.Errorf("failed to add control plane label: %w", err)
+		return nil, fmt.Errorf("failed to add control plane label: %w", err)
 	}
 
-	return n, nil
+	return &n, nil
 }
 
 // returns kubeconfig
@@ -363,13 +367,13 @@ func (np Microk8sNodeProvisioner) untilKubernetesReady(ctx context.Context, ip s
 
 // ProvisionBatch wraps provision to create n Cherry Servers servers
 // in a concurrent manner.
-func (np Microk8sNodeProvisioner) ProvisionBatch(ctx context.Context, n int) ([]ControlPlaneNode, []error) {
+func (np Microk8sNodeProvisioner) ProvisionBatch(ctx context.Context, n int) ([]*ControlPlaneNode, []error) {
 	type p struct {
-		nn  ControlPlaneNode
+		nn  *ControlPlaneNode
 		err error
 	}
 
-	nodes := make([]ControlPlaneNode, n)
+	nodes := make([]*ControlPlaneNode, n)
 	errs := make([]error, n)
 	c := make(chan p, n)
 
@@ -390,7 +394,7 @@ func (np Microk8sNodeProvisioner) ProvisionBatch(ctx context.Context, n int) ([]
 
 // wait until node has provider ID or is tainted with
 // 'node.cloudprovider.kubernetes.io/uninitialized'
-func (np Microk8sNodeProvisioner) untilProvisioned(ctx context.Context, n ControlPlaneNode) error {
+func (np Microk8sNodeProvisioner) untilProvisioned(ctx context.Context, n *ControlPlaneNode) error {
 	const uninitTaint = "node.cloudprovider.kubernetes.io/uninitialized"
 	ctx, cancel := context.WithTimeout(ctx, informerTimeout)
 	provisioned := false
@@ -517,7 +521,7 @@ func provisionServer(ctx context.Context, cc cherrygo.Client, projectID int, use
 
 // ControlPlanesToNodes extracts embedded Node objects from
 // the ControlPlaneNode
-func ControlPlanesToNodes(cps []ControlPlaneNode) []Node {
+func ControlPlanesToNodes(cps []*ControlPlaneNode) []Node {
 	nodes := make([]Node, len(cps))
 	for i, n := range cps {
 		nodes[i] = n.Node
