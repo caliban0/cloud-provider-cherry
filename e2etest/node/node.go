@@ -171,29 +171,29 @@ func (n *ControlPlaneNode) JoinAsControlPlane(ctx context.Context, nn Node) (*Co
 		return nil, fmt.Errorf("failed to execute join cmd: %w", err)
 	}
 
-	kubeconfig, err := nn.runCmd("microk8s config", nil)
+	kubeconfig, err := untilKubeAPIReady(ctx, nn)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get k8s config: %w", err)
+		return nil, fmt.Errorf("kube-api not ready on node %q: %w", nn.Server.Hostname, err)
 	}
 
-	newNode := ControlPlaneNode{Node: nn}
-
-	newNode.K8sclient, err = newK8sClient(kubeconfig)
+	k8sClient, err := newK8sClient(kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create k8s client: %w", err)
 	}
 
-	err = newNode.UntilHasProviderID(ctx, newNode.K8sclient)
+	newCp := ControlPlaneNode{Node: nn, K8sclient: k8sClient}
+
+	err = newCp.UntilHasProviderID(ctx, newCp.K8sclient)
 	if err != nil {
 		return nil, fmt.Errorf("added node didn't get a provider ID: %w", err)
 	}
 
-	err = newNode.addCpLabel(ctx)
+	err = newCp.addCpLabel(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add control plane label: %w", err)
 	}
 
-	return &newNode, nil
+	return &newCp, nil
 }
 
 // JoinAsWorker joins nn to the base node's cluster as a worker.
@@ -310,14 +310,11 @@ func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (*ControlPlaneN
 		return nil, fmt.Errorf("failed to provision server: %w", err)
 	}
 
-	ip, err := serverPublicIP(srv)
-	if err != nil {
-		return nil, err
-	}
+	n := Node{Server: srv, cmdRunner: np.cmdRunner}
 
-	kubeconfig, err := np.untilKubernetesReady(ctx, ip)
+	kubeconfig, err := untilKubeAPIReady(ctx, n)
 	if err != nil {
-		return nil, fmt.Errorf("failed to establish connection to k8s on node %q: %w", srv.Hostname, err)
+		return nil, fmt.Errorf("kube-api not ready on %q: %w", srv.Hostname, err)
 	}
 
 	k8sclient, err := newK8sClient(kubeconfig)
@@ -325,44 +322,19 @@ func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (*ControlPlaneN
 		return nil, fmt.Errorf("failed to create k8s client for node %q: %w", srv.Hostname, err)
 	}
 
-	n := ControlPlaneNode{Node: Node{Server: srv, cmdRunner: np.cmdRunner}, K8sclient: k8sclient}
+	cp := ControlPlaneNode{Node: n, K8sclient: k8sclient}
 
-	err = np.untilProvisioned(ctx, &n)
+	err = np.untilProvisioned(ctx, &cp)
 	if err != nil {
 		return nil, fmt.Errorf("node didn't reach provisioned state: %w", err)
 	}
 
-	err = n.addCpLabel(ctx)
+	err = cp.addCpLabel(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add control plane label: %w", err)
 	}
 
-	return &n, nil
-}
-
-// returns kubeconfig
-func (np Microk8sNodeProvisioner) untilKubernetesReady(ctx context.Context, ip string) (string, error) {
-	const timeout = time.Minute * 5
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	err := backoff.ExpBackoffWithContext(func() (bool, error) {
-		// Check if kube-api is reachable. Non-zero exit code will be returned if not.
-		_, err := np.cmdRunner.run(ip, "microk8s kubectl get nodes --no-headers", nil)
-		if err != nil {
-			return false, nil
-		}
-		return true, nil
-	}, backoff.DefaultExpBackoffConfigWithContext(ctx))
-	if err != nil {
-		return "", fmt.Errorf("node kube-api didn't become reachable: %w", err)
-	}
-
-	kubeconfig, err := np.cmdRunner.run(ip, "microk8s config", nil)
-	if err != nil {
-		return "", fmt.Errorf("failed to get kubeconfig %w", err)
-	}
-	return kubeconfig, nil
+	return &cp, nil
 }
 
 // ProvisionBatch wraps provision to create n Cherry Servers servers
@@ -460,6 +432,37 @@ func NewMicrok8sNodeProvisioner(testName, k8sVersion string, projectID int, cc c
 		cmdRunner:    *sshRunner,
 		k8sVersion:   k8sVersion,
 	}, nil
+}
+
+// check for kubectl success through ssh
+// returns kubeconfig
+func untilKubeAPIReady(ctx context.Context, n Node) (string, error) {
+	const timeout = time.Minute * 5
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ip, err := serverPublicIP(n.Server)
+	if err != nil {
+		return "", fmt.Errorf("couldn't get server ip: %w", err)
+	}
+
+	err = backoff.ExpBackoffWithContext(func() (bool, error) {
+		// Check if kube-api is reachable. Non-zero exit code will be returned if not.
+		_, err := n.cmdRunner.run(ip, "microk8s kubectl get nodes --no-headers", nil)
+		if err != nil {
+			return false, nil
+		}
+		return true, nil
+	}, backoff.DefaultExpBackoffConfigWithContext(ctx))
+	if err != nil {
+		return "", fmt.Errorf("node kube-api didn't become reachable: %w", err)
+	}
+
+	kubeconfig, err := n.cmdRunner.run(ip, "microk8s config", nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to get kubeconfig %w", err)
+	}
+	return kubeconfig, nil
 }
 
 func serverPublicIP(srv cherrygo.Server) (string, error) {
