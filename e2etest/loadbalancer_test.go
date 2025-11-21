@@ -140,7 +140,6 @@ type kubeVipConfig struct {
 	localAsn    string
 	peerAsn     string
 	peerAddress string
-	routerID    string
 }
 
 func (k *kubeHelpers) setupKubeVip(ctx context.Context, cfg kubeVipConfig) {
@@ -249,8 +248,16 @@ func (k *kubeHelpers) setupKubeVip(ctx context.Context, cfg kubeVipConfig) {
 									Value: ":2112",
 								},
 								{
-									Name:  "bgp_routerid",
-									Value: cfg.routerID,
+									Name: "bgp_routerid",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "status.podIP",
+										},
+									},
+								},
+								{
+									Name: "bgp_multihop",
+									Value: "true",
 								},
 							},
 							Image:           "ghcr.io/kube-vip/kube-vip:v1.0.1",
@@ -756,7 +763,6 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 		localAsn:    strconv.Itoa(env.project.Bgp.LocalASN),
 		peerAsn:     strconv.Itoa(env.mainNode.Server.Region.BGP.Asn),
 		peerAddress: env.mainNode.Server.Region.BGP.Hosts[0],
-		routerID:    env.mainNode.Server.IPAddresses[0].Address,
 		version:     *kubeVipVersion,
 	})
 
