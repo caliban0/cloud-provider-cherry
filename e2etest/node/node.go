@@ -55,7 +55,7 @@ type WorkerNode struct {
 
 // runCmd runs a shell command on the node via SSH.
 // Passing nil stdin is fine.
-func (n Node) runCmd(cmd string, stdin io.Reader) (resp string, err error) {
+func (n *Node) runCmd(cmd string, stdin io.Reader) (resp string, err error) {
 	ip, err := serverPublicIP(n.Server)
 	if err != nil {
 		return "", err
@@ -63,7 +63,9 @@ func (n Node) runCmd(cmd string, stdin io.Reader) (resp string, err error) {
 	return n.cmdRunner.run(ip, cmd, stdin)
 }
 
-func (n *Node) UntilHasProviderID(ctx context.Context, k8sClient kubernetes.Interface) error {
+type NodeConditionFunc func (node *corev1.Node) bool
+
+func (n *Node) untilNodeCondition(ctx context.Context, k8sClient kubernetes.Interface, f NodeConditionFunc) error {
 	ctx, cancel := context.WithTimeout(ctx, informerTimeout)
 	defer cancel()
 
@@ -83,7 +85,7 @@ func (n *Node) UntilHasProviderID(ctx context.Context, k8sClient kubernetes.Inte
 			return false, fmt.Errorf("unexpected type for %s object: %T", n.Server.Hostname, o)
 		}
 
-		return nn.Spec.ProviderID != "", nil
+		return f(nn), nil
 	}
 
 	_, err := watch.UntilWithSync(ctx, lw, &corev1.Node{}, precon, func(event apiwatch.Event) (bool, error) {
@@ -92,10 +94,28 @@ func (n *Node) UntilHasProviderID(ctx context.Context, k8sClient kubernetes.Inte
 			return false, fmt.Errorf("unexpected object type: %T", event.Object)
 		}
 
-		return nn.Spec.ProviderID != "", nil
+		return f(nn), nil
 	})
 
 	return err
+}
+
+func (n *Node) UntilHasProviderID(ctx context.Context, k8sClient kubernetes.Interface) error {
+	return n.untilNodeCondition(ctx, k8sClient, func(node *corev1.Node) bool {
+		return node.Spec.ProviderID != ""
+	})
+}
+
+func (n *Node) untilReady(ctx context.Context, k8sClient kubernetes.Interface) error {
+	return n.untilNodeCondition(ctx, k8sClient, func(node *corev1.Node) bool {
+		for _, con := range node.Status.Conditions {
+			if con.Type == corev1.NodeReady && con.Status == corev1.ConditionTrue {
+				return true
+			}
+		}
+
+		return false
+	})
 }
 
 // LoadImage side-loads a OCI image tarball onto the node.
@@ -200,7 +220,7 @@ func (n *ControlPlaneNode) JoinAsControlPlane(ctx context.Context, nn Node) (*Co
 
 	newCp := ControlPlaneNode{Node: nn, K8sclient: k8sClient}
 
-	err = newCp.UntilHasProviderID(ctx, newCp.K8sclient)
+	err = newCp.untilReady(ctx, newCp.K8sclient)
 	if err != nil {
 		return nil, fmt.Errorf("added node didn't get a provider ID: %w", err)
 	}
@@ -226,7 +246,7 @@ func (n *ControlPlaneNode) JoinAsWorker(ctx context.Context, nn Node) (WorkerNod
 	}
 	newNode := WorkerNode{Node: nn}
 
-	err = newNode.UntilHasProviderID(ctx, n.K8sclient)
+	err = newNode.untilReady(ctx, n.K8sclient)
 	if err != nil {
 		return WorkerNode{}, fmt.Errorf("added node didn't get a provider ID: %w", err)
 	}
