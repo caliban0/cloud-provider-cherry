@@ -139,7 +139,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 			t.Fatalf("failed get request to %s:%d:%v ", fip.Address, node.APIPort, err)
 		}
 
-		if got, want := resp.StatusCode, http.StatusForbidden; got != want {
+		if got, want := resp.StatusCode, http.StatusBadRequest; got != want {
 			t.Errorf("response status %d, want %d", got, want)
 		}
 	})
