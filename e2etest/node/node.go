@@ -63,7 +63,7 @@ func (n *Node) runCmd(cmd string, stdin io.Reader) (resp string, err error) {
 	return n.cmdRunner.run(ip, cmd, stdin)
 }
 
-type NodeConditionFunc func (node *corev1.Node) bool
+type NodeConditionFunc func(node *corev1.Node) bool
 
 func (n *Node) untilNodeCondition(ctx context.Context, k8sClient kubernetes.Interface, f NodeConditionFunc) error {
 	ctx, cancel := context.WithTimeout(ctx, informerTimeout)
@@ -137,10 +137,20 @@ func (n *Node) LoadImage(ociPath string) error {
 	return nil
 }
 
+// AssignIP assigns IP to the node's loopback interface.
 func (n *Node) AssignIP(ip string) error {
 	r, err := n.runCmd(fmt.Sprintf("ip a add %s dev lo", ip), nil)
 	if err != nil {
 		return fmt.Errorf("failed to assign ip to lo: %s", r)
+	}
+	return nil
+}
+
+// DeleteIP deletes IP from the node's loopback interface.
+func (n *Node) DeleteIP(ip string) error {
+	r, err := n.runCmd(fmt.Sprintf("ip a delete %s dev lo", ip), nil)
+	if err != nil {
+		return fmt.Errorf("failed to delete ip from lo: %s", r)
 	}
 	return nil
 }
@@ -222,7 +232,7 @@ func (n *ControlPlaneNode) JoinAsControlPlane(ctx context.Context, nn Node) (*Co
 
 	err = newCp.untilReady(ctx, newCp.K8sclient)
 	if err != nil {
-		return nil, fmt.Errorf("added node didn't get a provider ID: %w", err)
+		return nil, fmt.Errorf("added node didn't get ready status: %w", err)
 	}
 
 	err = newCp.addCpLabel(ctx)
@@ -248,7 +258,7 @@ func (n *ControlPlaneNode) JoinAsWorker(ctx context.Context, nn Node) (WorkerNod
 
 	err = newNode.untilReady(ctx, n.K8sclient)
 	if err != nil {
-		return WorkerNode{}, fmt.Errorf("added node didn't get a provider ID: %w", err)
+		return WorkerNode{}, fmt.Errorf("added node didn't get ready status: %w", err)
 	}
 
 	return newNode, nil
@@ -281,18 +291,14 @@ func (n *ControlPlaneNode) JoinControlPlanesBatch(ctx context.Context, nodes []N
 	return newNodes, errs
 }
 
-// Remove removes the provided node from the base node.
-func (n *ControlPlaneNode) Remove(nn Node) error {
-	resp, err := nn.runCmd("microk8s leave", nil)
+// Shutdown shuts down the node.
+func (n *Node) Shutdown() error {
+	resp, err := n.runCmd("shutdown now", nil)
 	if err != nil {
-		return fmt.Errorf("node %q failed \"leave\" command, resp: %q, with error: %v ",
-			nn.Server.Hostname, resp, err)
+		return fmt.Errorf("node %q failed \"shutdown now\" command, resp: %q, with error: %v ",
+			n.Server.Hostname, resp, err)
 	}
 
-	resp, err = n.runCmd("microk8s remove-node "+nn.Server.Hostname, nil)
-	if err != nil {
-		return fmt.Errorf("failed to remove node: %v: %s", err, resp)
-	}
 	return nil
 }
 

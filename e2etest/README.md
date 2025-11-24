@@ -70,13 +70,11 @@ Also, as part of the `kube-vip` test, we check the worker node get's annotations
 
 1. Create a FIP with a tag that matches the CCM's `fipTag`.
 2. Assign the FIP to the control plane node's loopback interface.
-3. Check that the FIP gets assigned to the control plane node.
-4. Add three additional control plane nodes to the cluster. Two are enough for the test, but `microk8s` automatically enables it's own HA when there are three control planes in the cluster, which leads two quorum issues later when we remove nodes, if we don't have at least two.
-5. Assign the FIP to each of the new control plane node loopback interfaces.
+3. Check that the FIP gets assigned to the control plane node in the Cherry Servers API.
+4. Check that `kube-api` is reachable through the FIP.
+5. Add three additional control plane nodes to the cluster. Two are enough for the test, but `microk8s` automatically enables it's own HA when there are three control planes in the cluster, which leads two quorum issues later when we remove nodes, if we don't have at least two.
 6. Delete one of the nodes that the FIP isn't attached to through the Cherry Servers API.
 7. Check that the FIP is still attached to the same node.
 8. Assign the FIP to another node. This is done because the CCM image is only side-loaded to one node, so we can't delete it.
-9. Disable the node that the FIP is attached to, but don't delete it through the Cherry Servers API.
+9.  Shut down the node that the FIP is attached to, but don't delete it through the Cherry Servers API.
 10. Check that the FIP is attached to one of the remaining nodes.
-11. Assign the FIP to the loopback interface on those nodes.
-12. Check that the `kube-api` service is reachable through the FIP (with an HTTP request).
