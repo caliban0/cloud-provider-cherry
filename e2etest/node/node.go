@@ -108,6 +108,14 @@ func (n *Node) LoadImage(ociPath string) error {
 	return nil
 }
 
+func (n *Node) AssignIP(ip string) error {
+	r, err := n.runCmd(fmt.Sprintf("ip a add %s dev lo", ip), nil)
+	if err != nil {
+		return fmt.Errorf("failed to assign ip to lo: %s", r)
+	}
+	return nil
+}
+
 func (n *ControlPlaneNode) Deploy(manifest io.Reader) error {
 	r, err := n.runCmd("microk8s kubectl apply -f - ", manifest)
 	if err != nil {

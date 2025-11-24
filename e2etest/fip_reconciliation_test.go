@@ -52,6 +52,10 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		t.Fatalf("failed to create cherry servers fip: %v", err)
 	}
 
+	if err = env.mainNode.AssignIP(fip.Address); err != nil {
+		t.Fatalf("failed to assign ip %s to %s", fip.Address, env.mainNode.Server.Hostname)
+	}
+
 	err = untilIPHasTarget(ctx, fip, env.mainNode.Server.Hostname)
 	if err != nil {
 		t.Fatalf("fip %s didn't get attached to cp node: %v", fip.ID, err)
@@ -70,6 +74,12 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	for _, err := range errs {
 		if err != nil {
 			t.Fatalf("failed to join node: %v", err)
+		}
+	}
+
+	for _, n := range nodes {
+		if err = n.AssignIP(fip.Address); err != nil {
+			t.Fatalf("failed to assign ip %s to %s", fip.Address, n.Server.Hostname)
 		}
 	}
 
