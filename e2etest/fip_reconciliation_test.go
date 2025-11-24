@@ -61,6 +61,17 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		t.Fatalf("fip %s didn't get attached to cp node: %v", fip.ID, err)
 	}
 
+	t.Run("fip reachable", func(t *testing.T) {
+		resp, err := http.Get(fmt.Sprintf("http://%s:%d", fip.Address, node.APIPort))
+		if err != nil {
+			t.Fatalf("failed get request to %s:%d:%v ", fip.Address, node.APIPort, err)
+		}
+
+		if got, want := resp.StatusCode, http.StatusBadRequest; got != want {
+			t.Errorf("response status %d, want %d", got, want)
+		}
+	})
+
 	// Provision enough nodes, so that we don't fall below two for the cluster,
 	// otherwise dqlite quorum breaks.
 	nodes, errs := np.ProvisionBatch(ctx, 3)
@@ -74,12 +85,6 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	for _, err := range errs {
 		if err != nil {
 			t.Fatalf("failed to join node: %v", err)
-		}
-	}
-
-	for _, n := range nodes {
-		if err = n.AssignIP(fip.Address); err != nil {
-			t.Fatalf("failed to assign ip %s to %s", fip.Address, n.Server.Hostname)
 		}
 	}
 
@@ -115,33 +120,28 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 
 	// test that fip is reattached when a cp node is disabled
 
-	// Reassign the FIP, so that we don't have to delete the main node,
-	// since the main node is the one that the CCM is running on.
+	// Reassign the FIP, so that we don't have to shut down the main node,
+	// since the main node is the one that has the CCM image side-loaded.
 	_, _, err = cherryClient.IPAddresses.Assign(fip.ID, &cherrygo.AssignIPAddress{ServerID: cp2.Server.ID})
 	if err != nil {
 		t.Fatalf("failed to re-assign ip %s: %v", fip.ID, err)
 	}
+	if err = env.mainNode.DeleteIP(fip.Address); err != nil {
+		t.Fatalf("failed to delete ip from node %q: %v", env.mainNode.Server.Hostname, err)
+	}
+	if err = cp2.AssignIP(fip.Address); err != nil {
+		t.Fatalf("failed to assign ip to node %q: %v", cp2.Server.Hostname, err)
+	}
 
-	err = env.mainNode.Remove(cp2.Node)
+	err = cp2.Shutdown()
 	if err != nil {
-		t.Fatalf("couldn't remove node from cluster: %v", err)
+		t.Fatalf("couldn't shut down node: %v", err)
 	}
 
 	wantTargets := []string{wantTarget, cp3.Server.Hostname}
 
 	err = untilIPHasTarget(ctx, fip, wantTargets...)
 	if err != nil {
-		t.Fatalf("fip %s didn't get attached to cp nodes %v: %v", fip.ID, wantTargets, err)
+		t.Fatalf("fip %s didn't get attached to any of cp nodes %v: %v", fip.ID, wantTargets, err)
 	}
-	t.Run("fip reachable", func(t *testing.T) {
-		resp, err := http.Get(fmt.Sprintf("http://%s:%d", fip.Address, node.APIPort))
-		if err != nil {
-			t.Fatalf("failed get request to %s:%d:%v ", fip.Address, node.APIPort, err)
-		}
-
-		if got, want := resp.StatusCode, http.StatusBadRequest; got != want {
-			t.Errorf("response status %d, want %d", got, want)
-		}
-	})
-
 }
