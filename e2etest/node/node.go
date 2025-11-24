@@ -63,9 +63,9 @@ func (n *Node) runCmd(cmd string, stdin io.Reader) (resp string, err error) {
 	return n.cmdRunner.run(ip, cmd, stdin)
 }
 
-type NodeConditionFunc func(node *corev1.Node) bool
+type nodeConditionFunc func(node *corev1.Node) bool
 
-func (n *Node) untilNodeCondition(ctx context.Context, k8sClient kubernetes.Interface, f NodeConditionFunc) error {
+func (n *Node) untilNodeCondition(ctx context.Context, k8sClient kubernetes.Interface, f nodeConditionFunc) error {
 	ctx, cancel := context.WithTimeout(ctx, informerTimeout)
 	defer cancel()
 
