@@ -16,15 +16,17 @@ import (
 
 	"github.com/cherryservers/cherrygo/v3"
 	"golang.org/x/crypto/ssh"
-	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/cherryservers/cloud-provider-cherry-tests/backoff"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
+	apiwatch "k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/watch"
 )
 
 const (
@@ -63,30 +65,37 @@ func (n Node) runCmd(cmd string, stdin io.Reader) (resp string, err error) {
 
 func (n *Node) UntilHasProviderID(ctx context.Context, k8sClient kubernetes.Interface) error {
 	ctx, cancel := context.WithTimeout(ctx, informerTimeout)
-	hasID := false
+	defer cancel()
 
-	factory := informers.NewSharedInformerFactory(k8sClient, informerResyncPeriod)
-	_, err := factory.Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(_, newObj any) {
-			newNode, _ := newObj.(*corev1.Node)
-			if newNode.Name != n.Server.Hostname {
-				return
-			}
-			if newNode.Spec.ProviderID != "" {
-				hasID = true
-				cancel()
-			}
-		}})
-	if err != nil {
-		return err
+	lw := cache.NewListWatchFromClient(k8sClient.CoreV1().RESTClient(), "nodes", "", fields.Everything())
+
+	var precon watch.PreconditionFunc = func(store cache.Store) (bool, error) {
+		o, ok, err := store.GetByKey(n.Server.Hostname)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+
+		nn, ok := o.(*corev1.Node)
+		if !ok {
+			return false, fmt.Errorf("unexpected type for %s object: %T", n.Server.Hostname, o)
+		}
+
+		return nn.Spec.ProviderID != "", nil
 	}
 
-	factory.Start(ctx.Done())
-	factory.Shutdown()
-	if !hasID {
-		return ctx.Err()
-	}
-	return nil
+	_, err := watch.UntilWithSync(ctx, lw, &corev1.Node{}, precon, func(event apiwatch.Event) (bool, error) {
+		nn, ok := event.Object.(*corev1.Node)
+		if !ok {
+			return false, fmt.Errorf("unexpected object type: %T", event.Object)
+		}
+
+		return nn.Spec.ProviderID != "", nil
+	})
+
+	return err
 }
 
 // LoadImage side-loads a OCI image tarball onto the node.
@@ -377,35 +386,47 @@ func (np Microk8sNodeProvisioner) ProvisionBatch(ctx context.Context, n int) ([]
 func (np Microk8sNodeProvisioner) untilProvisioned(ctx context.Context, n *ControlPlaneNode) error {
 	const uninitTaint = "node.cloudprovider.kubernetes.io/uninitialized"
 	ctx, cancel := context.WithTimeout(ctx, informerTimeout)
-	provisioned := false
+	defer cancel()
 
-	factory := informers.NewSharedInformerFactory(n.K8sclient, informerResyncPeriod)
-	_, err := factory.Core().V1().Nodes().Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(_, newObj any) {
-			newNode, _ := newObj.(*corev1.Node)
-			if newNode.Name != n.Server.Hostname {
-				return
-			}
-			if newNode.Spec.ProviderID != "" {
-				provisioned = true
-				cancel()
-			} else if slices.ContainsFunc(newNode.Spec.Taints, func(t corev1.Taint) bool {
-				return t.Key == uninitTaint
-			}) {
-				provisioned = true
-				cancel()
-			}
-		}})
-	if err != nil {
-		return err
+	isProvisioned := func(n *corev1.Node) bool {
+		if n.Spec.ProviderID != "" {
+			return true
+		}
+
+		return slices.ContainsFunc(n.Spec.Taints, func(t corev1.Taint) bool {
+			return t.Key == uninitTaint
+		})
 	}
 
-	factory.Start(ctx.Done())
-	factory.Shutdown()
-	if !provisioned {
-		return ctx.Err()
+	lw := cache.NewListWatchFromClient(n.K8sclient.CoreV1().RESTClient(), "nodes", "", fields.Everything())
+
+	var precon watch.PreconditionFunc = func(store cache.Store) (bool, error) {
+		o, ok, err := store.GetByKey(n.Server.Hostname)
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+
+		nn, ok := o.(*corev1.Node)
+		if !ok {
+			return false, fmt.Errorf("unexpected type for %s object: %T", n.Server.Hostname, o)
+		}
+
+		return isProvisioned(nn), nil
 	}
-	return nil
+
+	_, err := watch.UntilWithSync(ctx, lw, &corev1.Node{}, precon, func(event apiwatch.Event) (bool, error) {
+		nn, ok := event.Object.(*corev1.Node)
+		if !ok {
+			return false, fmt.Errorf("unexpected object type: %T", event.Object)
+		}
+
+		return isProvisioned(nn), nil
+	})
+
+	return err
 }
 
 func (np Microk8sNodeProvisioner) Cleanup() error {
