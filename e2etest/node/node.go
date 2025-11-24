@@ -456,7 +456,7 @@ func untilKubeAPIReady(ctx context.Context, n Node) (string, error) {
 
 	err = backoff.ExpBackoffWithContext(func() (bool, error) {
 		// Check if kube-api is reachable. Non-zero exit code will be returned if not.
-		_, err := n.cmdRunner.run(ip, "microk8s kubectl get nodes --no-headers", nil)
+		_, err := n.cmdRunner.run(ip, "microk8s kubectl get --raw='/readyz'", nil)
 		if err != nil {
 			return false, nil
 		}
