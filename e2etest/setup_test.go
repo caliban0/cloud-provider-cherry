@@ -87,11 +87,12 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 	}
 
 	deployCcm(ctx, t, n, ccm.Config{
-		AuthToken:           cherryClient.AuthToken,
-		Region:              node.Region,
-		LoadBalancerSetting: cfg.loadBalancer,
-		FIPTag:              cfg.fipTag,
-		ProjectID:           project.ID})
+		AuthToken:               cherryClient.AuthToken,
+		Region:                  node.Region,
+		LoadBalancerSetting:     cfg.loadBalancer,
+		FIPTag:                  cfg.fipTag,
+		ProjectID:               project.ID,
+		FIPHealthCheckUseHostIP: true})
 
 	return &testEnv{
 		project:         project,

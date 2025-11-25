@@ -61,17 +61,6 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		t.Fatalf("fip %s didn't get attached to cp node: %v", fip.ID, err)
 	}
 
-	t.Run("fip reachable", func(t *testing.T) {
-		resp, err := http.Get(fmt.Sprintf("http://%s:%d", fip.Address, node.APIPort))
-		if err != nil {
-			t.Fatalf("failed get request to %s:%d:%v ", fip.Address, node.APIPort, err)
-		}
-
-		if got, want := resp.StatusCode, http.StatusBadRequest; got != want {
-			t.Errorf("response status %d, want %d", got, want)
-		}
-	})
-
 	// Provision enough nodes, so that we don't fall below two for the cluster,
 	// otherwise dqlite quorum breaks.
 	nodes, errs := np.ProvisionBatch(ctx, 3)
@@ -91,6 +80,12 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	cp1 := nodes[0]
 	cp2 := nodes[1]
 	cp3 := nodes[2]
+
+	for _, cp := range nodes {
+		if err = cp.AssignIP(fip.Address); err != nil {
+			t.Fatalf("failed to assign ip %s to %s", fip.Address, cp.Server.Hostname)
+		}
+	}
 
 	wantTarget := env.mainNode.Server.Hostname
 
@@ -126,12 +121,6 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to re-assign ip %s: %v", fip.ID, err)
 	}
-	if err = env.mainNode.DeleteIP(fip.Address); err != nil {
-		t.Fatalf("failed to delete ip from node %q: %v", env.mainNode.Server.Hostname, err)
-	}
-	if err = cp2.AssignIP(fip.Address); err != nil {
-		t.Fatalf("failed to assign ip to node %q: %v", cp2.Server.Hostname, err)
-	}
 
 	err = cp2.Shutdown()
 	if err != nil {
@@ -144,4 +133,15 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fip %s didn't get attached to any of cp nodes %v: %v", fip.ID, wantTargets, err)
 	}
+
+	t.Run("fip reachable", func(t *testing.T) {
+		resp, err := http.Get(fmt.Sprintf("http://%s:%d", fip.Address, node.APIPort))
+		if err != nil {
+			t.Fatalf("failed get request to %s:%d:%v ", fip.Address, node.APIPort, err)
+		}
+
+		if got, want := resp.StatusCode, http.StatusBadRequest; got != want {
+			t.Errorf("response status %d, want %d", got, want)
+		}
+	})
 }
