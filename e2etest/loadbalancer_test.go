@@ -588,11 +588,18 @@ func (s loadBalancerSubTester) testSecondServiceRemoval(ctx context.Context,
 	})
 }
 
-func (s loadBalancerSubTester) testFirstServiceReachable(t *testing.T) {
+func (s loadBalancerSubTester) testFirstServiceReachable(ctx context.Context, t *testing.T) {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute*1)
+	defer cancel()
+
 	t.Run("first service reachable", func(t *testing.T) {
 		ip := s.firstSvc.Status.LoadBalancer.Ingress[0].IP
 		port := s.firstSvc.Spec.Ports[0].Port
-		resp, err := http.Get(fmt.Sprintf("http://%s:%d", ip, port))
+		req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s:%d", ip, port), nil)
+		if err != nil {
+			t.Fatalf("failed to build request: %v", err)
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatalf("failed to get from service :%v", err)
 		}
@@ -721,7 +728,7 @@ func TestMetalLB(t *testing.T) {
 	subtester.testServerBgpEnabled(t)
 	subtester.testProjectBgpEnabled(t)
 	subtester.testDistinctIngressIps(t)
-	subtester.testFirstServiceReachable(t)
+	subtester.testFirstServiceReachable(ctx, t)
 
 	subtester.testFirstServiceRemoval(ctx, t, namespace)
 	subtester.testSecondServiceRemoval(ctx, t, namespace)
@@ -773,7 +780,7 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 	subtester.testProjectBgpEnabled(t)
 	subtester.testNodeHasAnnotations(ctx, t)
 	subtester.testDistinctIngressIps(t)
-	subtester.testFirstServiceReachable(t)
+	subtester.testFirstServiceReachable(ctx, t)
 
 	subtester.testFirstServiceRemoval(ctx, t, namespace)
 	subtester.testSecondServiceRemoval(ctx, t, namespace)
