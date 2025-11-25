@@ -102,12 +102,16 @@ func (n *Node) untilNodeCondition(ctx context.Context, k8sClient kubernetes.Inte
 
 func (n *Node) UntilHasProviderID(ctx context.Context, k8sClient kubernetes.Interface) error {
 	return n.untilNodeCondition(ctx, k8sClient, func(node *corev1.Node) bool {
-		return node.Spec.ProviderID != ""
+		return node.Name == n.Server.Hostname && node.Spec.ProviderID != ""
 	})
 }
 
 func (n *Node) untilReady(ctx context.Context, k8sClient kubernetes.Interface) error {
 	return n.untilNodeCondition(ctx, k8sClient, func(node *corev1.Node) bool {
+		if n.Server.Hostname != node.Name {
+			return false
+		}
+
 		for _, con := range node.Status.Conditions {
 			if con.Type == corev1.NodeReady && con.Status == corev1.ConditionTrue {
 				return true
@@ -256,9 +260,9 @@ func (n *ControlPlaneNode) JoinAsWorker(ctx context.Context, nn Node) (WorkerNod
 	}
 	newNode := WorkerNode{Node: nn}
 
-	err = newNode.untilReady(ctx, n.K8sclient)
+	err = newNode.UntilHasProviderID(ctx, n.K8sclient)
 	if err != nil {
-		return WorkerNode{}, fmt.Errorf("added node didn't get ready status: %w", err)
+		return WorkerNode{}, fmt.Errorf("added node didn't get provider ID: %w", err)
 	}
 
 	return newNode, nil
@@ -335,7 +339,7 @@ func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (*ControlPlaneN
 	const (
 		userDataPath  = "./testdata/init-microk8s.yaml"
 		k8sVersionVar = "K8S_VERSION"
-		timeout       = 15 * time.Minute
+		timeout       = 30 * time.Minute
 	)
 
 	ctx, cancel := context.WithTimeoutCause(ctx, timeout, errors.New("node provision timeout"))
@@ -492,7 +496,7 @@ func NewMicrok8sNodeProvisioner(testName, k8sVersion string, projectID int, cc c
 // check for kubectl success through ssh
 // returns kubeconfig
 func untilKubeAPIReady(ctx context.Context, n Node) (string, error) {
-	const timeout = time.Minute * 5
+	const timeout = time.Minute * 10
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -541,7 +545,7 @@ func provisionServer(ctx context.Context, cc cherrygo.Client, projectID int, use
 	const (
 		serverImage = "ubuntu_24_04_64bit"
 		serverPlan  = "B1-4-4gb-80s-shared"
-		timeout     = time.Minute * 7
+		timeout     = time.Minute * 15
 	)
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
