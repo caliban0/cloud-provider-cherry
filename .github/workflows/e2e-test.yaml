@@ -1,0 +1,42 @@
+name: E2E test
+
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  CCM_IMG_PATH: ${{ github.workspace }}/ccm-test.tar
+
+jobs:
+  test:
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: checkout
+        uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.24'
+      - uses: actions/cache@v4
+        id: image-cache
+        with: 
+          path: ${{ env.CCM_IMG_PATH }}
+          key: ${{ runner.os }}-ccm-img-${{ hashFiles('**/go.sum','Dockerfile', 'Makefile', 'cherry/**/*.go') }}
+
+      - name: Setup up Docker buildx
+        id: buildx
+        if: steps.image-cache.outputs.cache-hit != 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image tarball
+        if: steps.image-cache.outputs.cache-hit != 'true'
+        env:
+          E2E_TEST_IMAGE_DEST: ${{ env.CCM_IMG_PATH }}
+          E2E_TEST_BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
+        run: make build-test-image
+
+      - name: Test
+        env:
+          CHERRY_TEST_API_TOKEN: ${{ secrets.CHERRY_TEST_API_TOKEN }}
+          CHERRY_TEST_TEAM_ID: ${{ vars.CHERRY_TEST_TEAM_ID }}
+          CCM_IMG_PATH: ${{ env.CCM_IMG_PATH }}
+        run: make test-e2e
