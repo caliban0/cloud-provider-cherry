@@ -2,6 +2,7 @@ name: E2E test
 
 on:
   workflow_dispatch:
+  push:
 
 env:
   CCM_IMG_PATH: ${{ github.workspace }}/ccm-test.tar
