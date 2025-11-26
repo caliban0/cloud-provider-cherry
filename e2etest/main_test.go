@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/cherryservers/cherrygo/v3"
+	"github.com/go-logr/logr"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -15,24 +17,28 @@ const (
 	teamIDVar         = "CHERRY_TEST_TEAM_ID"
 	imagePathVar      = "CCM_IMG_PATH"
 	noCleanupVar      = "NO_CLEANUP"
+	silenceKlogVar    = "SILENCE_KLOG"
 	k8sVersionVar     = "K8S_VERSION"
 	metalLBVersionVar = "METALLB_VERSION"
 	kubeVipVersionVar = "KUBE_VIP_VERSION"
 )
 
-var cherryClient *cherrygo.Client
-var teamID *int
-var ccmImagePath *string
-var cleanup *bool
-var k8sVersion *string
-var metalLBVersion *string
-var kubeVipVersion *string
+var (
+	cherryClient   *cherrygo.Client
+	teamID         *int
+	ccmImagePath   *string
+	cleanup        *bool
+	k8sVersion     *string
+	metalLBVersion *string
+	kubeVipVersion *string
+)
 
 type config struct {
 	apiToken       string
 	teamID         int
 	ccmImagePath   string
 	cleanup        bool
+	silenceKlog    bool
 	k8sVersion     string
 	metalLBVersion string
 	kubeVipVersion string
@@ -59,6 +65,14 @@ func loadConfig() (config, error) {
 		}
 	}
 
+	silenceKlog := true
+	if silenceKlogEnv, ok := os.LookupEnv(silenceKlogVar); ok {
+		silenceKlog, err = strconv.ParseBool(silenceKlogEnv)
+		if err != nil {
+			return config{}, fmt.Errorf("failed to parse %s var: %w", silenceKlogVar, err)
+		}
+	}
+
 	k8sVersion := defaultK8sVersion
 	if k8sVersionEnv, ok := os.LookupEnv(k8sVersionVar); ok {
 		k8sVersion = k8sVersionEnv
@@ -79,6 +93,7 @@ func loadConfig() (config, error) {
 		teamID:         teamID,
 		ccmImagePath:   os.Getenv(imagePathVar),
 		cleanup:        !noCleanup,
+		silenceKlog:    silenceKlog,
 		k8sVersion:     k8sVersion,
 		metalLBVersion: metalLBVersion,
 		kubeVipVersion: kubeVipVersion,
@@ -102,6 +117,10 @@ func runMain(m *testing.M) int {
 	k8sVersion = &cfg.k8sVersion
 	metalLBVersion = &cfg.metalLBVersion
 	kubeVipVersion = &cfg.kubeVipVersion
+
+	if cfg.silenceKlog {
+		klog.SetLogger(logr.Discard())
+	}
 
 	code := m.Run()
 	return code

@@ -25,6 +25,7 @@ All configuration is done with environment variables:
 - `CHERRY_TEST_TEAM_ID` - the team for which all resources (projects, SSH keys, IPs, etc.) will be created, required.
 - `CCM_IMG_PATH` - path to the CCM image tarball, required.
 - `NO_CLEANUP` - if set to `true`, post-test cleanup will be disabled, optional.
+- `SILENCE_KLOG` - silences klog output, since it can pollute test logs with watcher errors. Set to `true` by default.
 - `K8S_VERSION` - what version of k8s to deploy on the cluster, optional. Defaults to `1.34`
 - `METALLB_VERSION` - what version of `metallb` to deploy for the `metallb` test, optional. Defaults to `0.15.2`
 - `KUBE_VIP_VERSION` - what version of `kube-vip` to deploy for the `kube-vip` test, optional. Defaults to `1.0.1`
