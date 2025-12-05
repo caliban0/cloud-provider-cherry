@@ -33,7 +33,6 @@ const (
 	Region                = "LT-Siauliai"
 	APIPort               = 16443 // default microk8s kube-api port
 	ControlPlaneNodeLabel = "node-role.kubernetes.io/control-plane"
-	informerResyncPeriod  = 5 * time.Second
 	informerTimeout       = 300 * time.Second
 	joinTimeout           = 360 * time.Second
 )
