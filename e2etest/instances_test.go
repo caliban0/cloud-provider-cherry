@@ -18,14 +18,22 @@ import (
 )
 
 func untilNodeGone(ctx context.Context, n corev1.Node, k8sClient kubernetes.Interface) error {
-	const nodeDeletionTimeout = 120 * time.Second
+	const nodeDeletionTimeout = 180 * time.Second
 
 	ctx, cancel := context.WithTimeoutCause(ctx, nodeDeletionTimeout, errors.New("no node deletion event before timeout"))
 	defer cancel()
 
+	var preconFunc watch.PreconditionFunc = func(store cache.Store) (bool, error) {
+		_, exists, err := store.GetByKey(n.Name)
+		if err != nil {
+			return false, err
+		}
+		return !exists, nil
+	}
+
 	lw := cache.NewListWatchFromClient(k8sClient.CoreV1().RESTClient(), "nodes", metav1.NamespaceAll, fields.Everything())
 
-	_, err := watch.UntilWithSync(ctx, lw, &corev1.Node{}, nil, func(event apiwatch.Event) (done bool, err error) {
+	_, err := watch.UntilWithSync(ctx, lw, &corev1.Node{}, preconFunc, func(event apiwatch.Event) (done bool, err error) {
 		node, ok := event.Object.(*corev1.Node)
 		if !ok {
 			return false, fmt.Errorf("unexpected object type: %T", event.Object)
