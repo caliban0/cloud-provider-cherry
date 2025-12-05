@@ -137,7 +137,7 @@ build-test-image:
 
 ## See e2etest/README.md for instructions.
 test-e2e:
-	cd e2etest && go test ./... -timeout=30m
+	cd e2etest && go test ./... -timeout=30m -count 1
 
 help: ## Display this help screen
 	@printf "\033[36m%s\n" "For all commands that can be used with one or more OS architecture, set the target architecture with ARCH= and the OS with OS="
