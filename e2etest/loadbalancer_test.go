@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	ccm "github.com/cherryservers/cloud-provider-cherry/cherry"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -350,6 +352,7 @@ type loadBalancerConfig struct {
 }
 
 func (k *kubeHelpers) setupLoadBalancer(ctx context.Context, cfg loadBalancerConfig, targetPort int) *corev1.Service {
+	k.t.Helper()
 	lb := corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: cfg.name,
@@ -390,31 +393,42 @@ func (k *kubeHelpers) loadBalancerFipTags(ctx context.Context, svc *corev1.Servi
 	}
 }
 
-func (k *kubeHelpers) untilLoadBalancerEnsured(ctx context.Context, lb corev1.Service, namespace string) corev1.Service {
+func (k *kubeHelpers) untilLoadBalancerReady(ctx context.Context, lb *corev1.Service, namespace string) {
 	k.t.Helper()
 	lw := cache.NewListWatchFromClient(k.client.CoreV1().RESTClient(), "services", namespace, fields.Everything())
 
+	var (
+		svc *corev1.Service
+		ok  bool
+	)
+
 	_, err := watch.UntilWithSync(ctx, lw, &corev1.Service{}, nil, func(event apiwatch.Event) (done bool, err error) {
-		svc, ok := event.Object.(*corev1.Service)
+		svc, ok = event.Object.(*corev1.Service)
 		if !ok {
 			return false, fmt.Errorf("unexpected object type: %T", event.Object)
 		}
-		if svc.ObjectMeta.Name != lb.Name {
+		if svc.Name != lb.Name {
 			return false, nil
 		}
-		// LB should be ensured, when ingress is set.
+		// Wait for both LoadBalancer IP and an endpoint.
 		if len(svc.Status.LoadBalancer.Ingress) > 0 {
-			lb = *svc
-			return true, nil
+			ess, err := k.client.DiscoveryV1().EndpointSlices(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil {
+				return false, nil
+			}
+
+			return slices.ContainsFunc(ess.Items, func(es discoveryv1.EndpointSlice) bool {
+				return es.Labels["kubernetes.io/service-name"] == lb.Name
+			}), nil
 		}
 		return false, nil
 	})
+
 	if err != nil {
-		k.t.Fatalf("ingress ip not set for load balancer %q: %v", lb.Name, err)
+		k.t.Fatalf("failed to ensure load balancer %q readiness: %v", lb.Name, err)
 	}
 
-	return lb
-
+	*lb = *svc
 }
 
 type loadBalancerSubTester struct {
@@ -627,7 +641,7 @@ func newLoadBalancerSubTester(ctx context.Context,
 			selector:  selector,
 		}, targetPort)
 
-	*firstSvc = kubeHelper.untilLoadBalancerEnsured(ctx, *firstSvc, namespace)
+	kubeHelper.untilLoadBalancerReady(ctx, firstSvc, namespace)
 
 	secondSvc := kubeHelper.setupLoadBalancer(ctx,
 		loadBalancerConfig{
@@ -636,7 +650,7 @@ func newLoadBalancerSubTester(ctx context.Context,
 			selector:  selector,
 		}, targetPort)
 
-	*secondSvc = kubeHelper.untilLoadBalancerEnsured(ctx, *secondSvc, namespace)
+	kubeHelper.untilLoadBalancerReady(ctx, secondSvc, namespace)
 
 	return loadBalancerSubTester{
 		env:       env,
