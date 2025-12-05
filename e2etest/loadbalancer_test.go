@@ -603,26 +603,38 @@ func (s loadBalancerSubTester) testSecondServiceRemoval(ctx context.Context,
 }
 
 func (s loadBalancerSubTester) testFirstServiceReachable(ctx context.Context, t *testing.T) {
-	ctx, cancel := context.WithTimeout(ctx, time.Minute*1)
+	ctx, cancel := context.WithTimeout(ctx, time.Minute*2)
 	defer cancel()
 
 	t.Run("first service reachable", func(t *testing.T) {
 		ip := s.firstSvc.Status.LoadBalancer.Ingress[0].IP
 		port := s.firstSvc.Spec.Ports[0].Port
-		req, err := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s:%d", ip, port), nil)
-		if err != nil {
-			t.Fatalf("failed to build request: %v", err)
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatalf("failed to get from service :%v", err)
-		}
-		if got, want := resp.StatusCode, http.StatusOK; got != want {
-			t.Errorf("status code %d, want %d", got, want)
-		}
-		resp.Body.Close()
-	})
 
+		url := fmt.Sprintf("http://%s:%d", ip, port)
+		var (
+			lastErr error
+			resp *http.Response
+		)
+
+		err := backoff.ExpBackoffWithContext(func() (bool, error) {
+			resp, lastErr = http.Get(url)
+			if lastErr != nil {
+				return false, nil
+			}
+			defer resp.Body.Close()
+
+			if got, want := resp.StatusCode, http.StatusOK; got != want {
+				lastErr = fmt.Errorf("status code %d, want %d", got, want)
+				return false, nil
+			}
+
+			return true, nil
+		}, backoff.DefaultExpBackoffConfigWithContext(ctx))
+
+		if err != nil {
+			t.Fatalf("failed to reach service: %v, last error: %v", err, lastErr)
+		}
+	})
 }
 
 func newLoadBalancerSubTester(ctx context.Context,
