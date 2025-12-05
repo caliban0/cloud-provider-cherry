@@ -17,7 +17,7 @@ import (
 )
 
 func untilIPHasTarget(ctx context.Context, ip cherrygo.IPAddress, target ...string) error {
-	const timeout = 180 * time.Second
+	const timeout = 300 * time.Second
 	ctx, cancel := context.WithTimeoutCause(
 		ctx, timeout, errors.New("timeout out waiting for ip to get target"))
 	defer cancel()
