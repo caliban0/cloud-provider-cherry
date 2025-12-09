@@ -64,7 +64,7 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 	project := setupProject(t, cfg.name)
 
 	// Setup node provisioner:
-	np, err := node.NewMicrok8sNodeProvisioner(cfg.name, *k8sVersion, *serverPlan, project.ID, *cherryClient)
+	np, err := node.NewMicrok8sNodeProvisioner(cfg.name, *k8sVersion, *serverPlan, *region, project.ID, *cherryClient)
 	if err != nil {
 		t.Fatalf("failed to setup node provisioner: %v", err)
 	}
@@ -88,7 +88,7 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 
 	deployCcm(ctx, t, n, ccm.Config{
 		AuthToken:               cherryClient.AuthToken,
-		Region:                  node.Region,
+		Region:                  *region,
 		LoadBalancerSetting:     cfg.loadBalancer,
 		FIPTag:                  cfg.fipTag,
 		ProjectID:               project.ID,

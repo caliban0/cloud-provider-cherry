@@ -45,7 +45,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 
 	fip, _, err := cherryClient.IPAddresses.Create(
 		env.project.ID, &cherrygo.CreateIPAddress{
-			Region: node.Region,
+			Region: env.mainNode.Server.Region.Slug,
 			Tags:   &map[string]string{fipTag: ""}})
 
 	if err != nil {

@@ -30,7 +30,6 @@ import (
 )
 
 const (
-	Region                = "LT-Siauliai"
 	APIPort               = 16443 // default microk8s kube-api port
 	ControlPlaneNodeLabel = "node-role.kubernetes.io/control-plane"
 	informerTimeout       = 300 * time.Second
@@ -330,6 +329,7 @@ type Microk8sNodeProvisioner struct {
 	projectID    int
 	sshKeyID     string
 	serverPlan   string
+	region       string
 	cmdRunner    sshCmdRunner
 	k8sVersion   string
 }
@@ -352,7 +352,7 @@ func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (*ControlPlaneN
 	userDataRaw = bytes.ReplaceAll(userDataRaw, []byte(k8sVersionVar), []byte(np.k8sVersion))
 	userdata := base64.StdEncoding.EncodeToString(userDataRaw)
 
-	srv, err := provisionServer(ctx, np.cherryClient, np.projectID, userdata, np.sshKeyID, np.serverPlan)
+	srv, err := provisionServer(ctx, np.cherryClient, np.projectID, userdata, np.sshKeyID, np.serverPlan, np.region)
 	if err != nil {
 		return nil, fmt.Errorf("failed to provision server: %w", err)
 	}
@@ -466,7 +466,7 @@ func (np Microk8sNodeProvisioner) Cleanup() error {
 	return errors.Join(projectErr, convErr, sshErr)
 }
 
-func NewMicrok8sNodeProvisioner(testName, k8sVersion, serverPlan string, projectID int, cc cherrygo.Client) (Microk8sNodeProvisioner, error) {
+func NewMicrok8sNodeProvisioner(testName, k8sVersion, serverPlan, region string, projectID int, cc cherrygo.Client) (Microk8sNodeProvisioner, error) {
 	// Create a SSH key signer:
 	sshRunner, err := newSSHCmdRunner()
 	if err != nil {
@@ -489,6 +489,7 @@ func NewMicrok8sNodeProvisioner(testName, k8sVersion, serverPlan string, project
 		projectID:    projectID,
 		sshKeyID:     strconv.Itoa(sshKey.ID),
 		serverPlan:   serverPlan,
+		region:       region,
 		cmdRunner:    *sshRunner,
 		k8sVersion:   k8sVersion,
 	}, nil
@@ -542,7 +543,7 @@ func newK8sClient(kubeconfig string) (*kubernetes.Clientset, error) {
 	return kubernetes.NewForConfig(cfg)
 }
 
-func provisionServer(ctx context.Context, cc cherrygo.Client, projectID int, userdata, sshkeyID, serverPlan string) (cherrygo.Server, error) {
+func provisionServer(ctx context.Context, cc cherrygo.Client, projectID int, userdata, sshkeyID, serverPlan, region string) (cherrygo.Server, error) {
 	const (
 		serverImage = "ubuntu_24_04_64bit"
 		timeout     = time.Minute * 15
@@ -554,7 +555,7 @@ func provisionServer(ctx context.Context, cc cherrygo.Client, projectID int, use
 	srv, _, err := cc.Servers.Create(&cherrygo.CreateServer{
 		ProjectID: projectID,
 		Plan:      serverPlan,
-		Region:    Region,
+		Region:    region,
 		Image:     serverImage,
 		UserData:  userdata,
 		SSHKeys:   []string{sshkeyID},
