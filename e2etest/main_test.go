@@ -18,6 +18,7 @@ const (
 	imagePathVar      = "CCM_IMG_PATH"
 	noCleanupVar      = "NO_CLEANUP"
 	silenceKlogVar    = "SILENCE_KLOG"
+	serverPlanVar     = "SERVER_PLAN"
 	k8sVersionVar     = "K8S_VERSION"
 	metalLBVersionVar = "METALLB_VERSION"
 	kubeVipVersionVar = "KUBE_VIP_VERSION"
@@ -28,6 +29,7 @@ var (
 	teamID         *int
 	ccmImagePath   *string
 	cleanup        *bool
+	serverPlan     *string
 	k8sVersion     *string
 	metalLBVersion *string
 	kubeVipVersion *string
@@ -39,6 +41,7 @@ type config struct {
 	ccmImagePath   string
 	cleanup        bool
 	silenceKlog    bool
+	serverPlan     string
 	k8sVersion     string
 	metalLBVersion string
 	kubeVipVersion string
@@ -73,6 +76,11 @@ func loadConfig() (config, error) {
 		}
 	}
 
+	serverPlan := "G1-8-32gb-200nv-ded"
+	if serverPlanEnv, ok := os.LookupEnv(serverPlanVar); ok {
+		serverPlan = serverPlanEnv
+	}
+
 	k8sVersion := defaultK8sVersion
 	if k8sVersionEnv, ok := os.LookupEnv(k8sVersionVar); ok {
 		k8sVersion = k8sVersionEnv
@@ -94,6 +102,7 @@ func loadConfig() (config, error) {
 		ccmImagePath:   os.Getenv(imagePathVar),
 		cleanup:        !noCleanup,
 		silenceKlog:    silenceKlog,
+		serverPlan:     serverPlan,
 		k8sVersion:     k8sVersion,
 		metalLBVersion: metalLBVersion,
 		kubeVipVersion: kubeVipVersion,
@@ -114,6 +123,7 @@ func runMain(m *testing.M) int {
 	teamID = &cfg.teamID
 	ccmImagePath = &cfg.ccmImagePath
 	cleanup = &cfg.cleanup
+	serverPlan = &cfg.serverPlan
 	k8sVersion = &cfg.k8sVersion
 	metalLBVersion = &cfg.metalLBVersion
 	kubeVipVersion = &cfg.kubeVipVersion
