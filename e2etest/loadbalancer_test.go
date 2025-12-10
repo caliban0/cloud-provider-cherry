@@ -613,7 +613,7 @@ func (s loadBalancerSubTester) testFirstServiceReachable(ctx context.Context, t 
 		url := fmt.Sprintf("http://%s:%d", ip, port)
 		var (
 			lastErr error
-			resp *http.Response
+			resp    *http.Response
 		)
 
 		err := backoff.ExpBackoffWithContext(func() (bool, error) {

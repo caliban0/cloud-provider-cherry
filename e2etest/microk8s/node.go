@@ -320,7 +320,7 @@ func (n *ControlPlaneNode) addCpLabel(ctx context.Context) error {
 	return err
 }
 
-type Microk8sNodeProvisioner struct {
+type NodeProvisioner struct {
 	cherryClient cherrygo.Client
 	projectID    int
 	sshKeyID     string
@@ -331,7 +331,7 @@ type Microk8sNodeProvisioner struct {
 }
 
 // Provision creates a Cherry Servers server and waits for k8s to be running.
-func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (*ControlPlaneNode, error) {
+func (np NodeProvisioner) Provision(ctx context.Context) (*ControlPlaneNode, error) {
 	const (
 		userDataPath  = "./testdata/init-microk8s.yaml"
 		k8sVersionVar = "K8S_VERSION"
@@ -382,7 +382,7 @@ func (np Microk8sNodeProvisioner) Provision(ctx context.Context) (*ControlPlaneN
 
 // ProvisionBatch wraps provision to create n Cherry Servers servers
 // in a concurrent manner.
-func (np Microk8sNodeProvisioner) ProvisionBatch(ctx context.Context, n int) ([]*ControlPlaneNode, []error) {
+func (np NodeProvisioner) ProvisionBatch(ctx context.Context, n int) ([]*ControlPlaneNode, []error) {
 	type p struct {
 		nn  *ControlPlaneNode
 		err error
@@ -409,7 +409,7 @@ func (np Microk8sNodeProvisioner) ProvisionBatch(ctx context.Context, n int) ([]
 
 // wait until node has provider ID or is tainted with
 // 'node.cloudprovider.kubernetes.io/uninitialized'
-func (np Microk8sNodeProvisioner) untilProvisioned(ctx context.Context, n *ControlPlaneNode) error {
+func (np NodeProvisioner) untilProvisioned(ctx context.Context, n *ControlPlaneNode) error {
 	const uninitTaint = "node.cloudprovider.kubernetes.io/uninitialized"
 	ctx, cancel := context.WithTimeout(ctx, informerTimeout)
 	defer cancel()
@@ -455,18 +455,18 @@ func (np Microk8sNodeProvisioner) untilProvisioned(ctx context.Context, n *Contr
 	return err
 }
 
-func (np Microk8sNodeProvisioner) Cleanup() error {
+func (np NodeProvisioner) Cleanup() error {
 	_, projectErr := np.cherryClient.Projects.Delete(np.projectID)
 	sshID, convErr := strconv.Atoi(np.sshKeyID)
 	_, _, sshErr := np.cherryClient.SSHKeys.Delete(sshID)
 	return errors.Join(projectErr, convErr, sshErr)
 }
 
-func NewMicrok8sNodeProvisioner(testName, k8sVersion, serverPlan, region string, projectID int, cc cherrygo.Client) (Microk8sNodeProvisioner, error) {
+func NewMicrok8sNodeProvisioner(testName, k8sVersion, serverPlan, region string, projectID int, cc cherrygo.Client) (NodeProvisioner, error) {
 	// Create a SSH key signer:
 	sshRunner, err := newSSHCmdRunner()
 	if err != nil {
-		return Microk8sNodeProvisioner{}, fmt.Errorf("failed to create SSH runner: %v", err)
+		return NodeProvisioner{}, fmt.Errorf("failed to create SSH runner: %v", err)
 	}
 
 	// Create SSH key on Cherry servers:
@@ -477,10 +477,10 @@ func NewMicrok8sNodeProvisioner(testName, k8sVersion, serverPlan, region string,
 		Key:   string(pub),
 	})
 	if err != nil {
-		return Microk8sNodeProvisioner{}, fmt.Errorf("failed to create SSH key on cherry servers: %v", err)
+		return NodeProvisioner{}, fmt.Errorf("failed to create SSH key on cherry servers: %v", err)
 	}
 
-	return Microk8sNodeProvisioner{
+	return NodeProvisioner{
 		cherryClient: cc,
 		projectID:    projectID,
 		sshKeyID:     strconv.Itoa(sshKey.ID),

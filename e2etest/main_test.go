@@ -93,8 +93,8 @@ func planFitsConstraints(p cherrygo.Plan, con ...planConstraint) bool {
 
 func getCheapestPlan(plans []cherrygo.Plan, cycle string, con ...planConstraint) (cherrygo.Plan, error) {
 	var (
-		minIdx int = -1
-		minPrice float32 = 0.0
+		minIdx   = -1
+		minPrice float32
 	)
 
 	for i := range plans {
@@ -113,7 +113,7 @@ func getCheapestPlan(plans []cherrygo.Plan, cycle string, con ...planConstraint)
 		}
 	}
 
-	if minIdx < 0{
+	if minIdx < 0 {
 		return cherrygo.Plan{}, fmt.Errorf("no viable plan found")
 	}
 	return plans[minIdx], nil
