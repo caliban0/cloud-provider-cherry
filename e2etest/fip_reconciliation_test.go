@@ -100,7 +100,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		t.Fatalf("failed to get node: %v", err)
 	}
 
-	err = untilNodeGone(ctx, *k8sn, env.k8sClient)
+	err = untilNodeDeleted(ctx, *k8sn, env.k8sClient)
 	if err != nil {
 		t.Fatalf("node %q didn't get deleted: %v", k8sn.Name, err)
 	}

@@ -17,7 +17,7 @@ import (
 	"k8s.io/client-go/tools/watch"
 )
 
-func untilNodeGone(ctx context.Context, n corev1.Node, k8sClient kubernetes.Interface) error {
+func untilNodeDeleted(ctx context.Context, n corev1.Node, k8sClient kubernetes.Interface) error {
 	const nodeDeletionTimeout = 180 * time.Second
 
 	ctx, cancel := context.WithTimeoutCause(ctx, nodeDeletionTimeout, errors.New("no node deletion event before timeout"))
@@ -126,7 +126,7 @@ func TestNodeAddDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to delete server: %v", err)
 	}
-	err = untilNodeGone(ctx, *k8sn, env.k8sClient)
+	err = untilNodeDeleted(ctx, *k8sn, env.k8sClient)
 	if err != nil {
 		t.Errorf("no deletion event for node %q, error: %v", k8sn.ObjectMeta.Name, err)
 	}
