@@ -462,7 +462,7 @@ func (np NodeProvisioner) Cleanup() error {
 	return errors.Join(projectErr, convErr, sshErr)
 }
 
-func NewMicrok8sNodeProvisioner(testName, k8sVersion, serverPlan, region string, projectID int, cc cherrygo.Client) (NodeProvisioner, error) {
+func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, projectID int, cc cherrygo.Client) (NodeProvisioner, error) {
 	// Create a SSH key signer:
 	sshRunner, err := newSSHCmdRunner()
 	if err != nil {
