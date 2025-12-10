@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cherryservers/cherrygo/v3"
@@ -44,7 +43,6 @@ type Node struct {
 type ControlPlaneNode struct {
 	Node
 	K8sclient kubernetes.Interface
-	mu        sync.Mutex
 }
 
 type WorkerNode struct {
@@ -311,7 +309,6 @@ func (n *ControlPlaneNode) addCpLabel(ctx context.Context) error {
 	ctx, cancel := context.WithTimeoutCause(ctx, 64*time.Second, fmt.Errorf("timed out on label apply for %s", n.Server.Hostname))
 	defer cancel()
 
-	n.mu.Lock()
 	_, err := n.K8sclient.CoreV1().Nodes().Patch(
 		ctx,
 		n.Server.Hostname,
@@ -319,7 +316,6 @@ func (n *ControlPlaneNode) addCpLabel(ctx context.Context) error {
 		fmt.Appendf(nil, `{"metadata":{"labels":{"%s":""}}}`, ControlPlaneNodeLabel),
 		metav1.PatchOptions{},
 	)
-	n.mu.Unlock()
 
 	return err
 }
