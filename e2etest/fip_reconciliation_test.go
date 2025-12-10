@@ -13,7 +13,7 @@ import (
 
 	"github.com/cherryservers/cherrygo/v3"
 	"github.com/cherryservers/cloud-provider-cherry-tests/backoff"
-	"github.com/cherryservers/cloud-provider-cherry-tests/node"
+	"github.com/cherryservers/cloud-provider-cherry-tests/microk8s"
 )
 
 func untilIPHasTarget(ctx context.Context, ip cherrygo.IPAddress, target ...string) error {
@@ -69,7 +69,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		}
 	}
 
-	nodes, errs = env.mainNode.JoinControlPlanesBatch(ctx, node.ControlPlanesToNodes(nodes))
+	nodes, errs = env.mainNode.JoinControlPlanesBatch(ctx, microk8s.ControlPlanesToNodes(nodes))
 	for _, err := range errs {
 		if err != nil {
 			t.Fatalf("failed to join node: %v", err)
@@ -134,9 +134,9 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	}
 
 	t.Run("fip reachable", func(t *testing.T) {
-		resp, err := http.Get(fmt.Sprintf("http://%s:%d", fip.Address, node.APIPort))
+		resp, err := http.Get(fmt.Sprintf("http://%s:%d", fip.Address, microk8s.APIPort))
 		if err != nil {
-			t.Fatalf("failed get request to %s:%d:%v ", fip.Address, node.APIPort, err)
+			t.Fatalf("failed get request to %s:%d:%v ", fip.Address, microk8s.APIPort, err)
 		}
 
 		if got, want := resp.StatusCode, http.StatusBadRequest; got != want {

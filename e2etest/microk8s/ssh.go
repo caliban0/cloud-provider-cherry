@@ -1,4 +1,4 @@
-package node
+package microk8s
 
 import (
 	"bytes"

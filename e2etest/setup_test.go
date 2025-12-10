@@ -12,7 +12,7 @@ import (
 	"github.com/cherryservers/cherrygo/v3"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/cherryservers/cloud-provider-cherry-tests/node"
+	"github.com/cherryservers/cloud-provider-cherry-tests/microk8s"
 	ccm "github.com/cherryservers/cloud-provider-cherry/cherry"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,7 +36,7 @@ func setupProject(t testing.TB, name string) cherrygo.Project {
 
 type testEnv struct {
 	project         cherrygo.Project
-	mainNode        *node.ControlPlaneNode
+	mainNode        *microk8s.ControlPlaneNode
 	nodeProvisioner nodeProvisioner
 	k8sClient       kubernetes.Interface
 	ctx             context.Context
@@ -49,8 +49,8 @@ type testEnvConfig struct {
 }
 
 type nodeProvisioner interface {
-	Provision(context.Context) (*node.ControlPlaneNode, error)
-	ProvisionBatch(context.Context, int) ([]*node.ControlPlaneNode, []error)
+	Provision(context.Context) (*microk8s.ControlPlaneNode, error)
+	ProvisionBatch(context.Context, int) ([]*microk8s.ControlPlaneNode, []error)
 }
 
 func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
@@ -61,7 +61,7 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 	project := setupProject(t, cfg.name)
 
 	// Setup node provisioner:
-	np, err := node.NewMicrok8sNodeProvisioner(cfg.name, *k8sVersion, *serverPlan, *region, project.ID, *cherryClient)
+	np, err := microk8s.NewMicrok8sNodeProvisioner(cfg.name, *k8sVersion, *serverPlan, *region, project.ID, *cherryClient)
 	if err != nil {
 		t.Fatalf("failed to setup node provisioner: %v", err)
 	}
@@ -100,7 +100,7 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 	}
 }
 
-func deployCcm(ctx context.Context, t testing.TB, n *node.ControlPlaneNode, cfg ccm.Config) {
+func deployCcm(ctx context.Context, t testing.TB, n *microk8s.ControlPlaneNode, cfg ccm.Config) {
 	const (
 		imgTag       = "ghcr.io/cherryservers/cloud-provider-cherry:test"
 		manifestPath = "../deploy/template/deployment.yaml"

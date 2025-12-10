@@ -16,7 +16,7 @@ import (
 
 	"github.com/cherryservers/cherrygo/v3"
 	"github.com/cherryservers/cloud-provider-cherry-tests/backoff"
-	"github.com/cherryservers/cloud-provider-cherry-tests/node"
+	"github.com/cherryservers/cloud-provider-cherry-tests/microk8s"
 	ccm "github.com/cherryservers/cloud-provider-cherry/cherry"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -178,7 +178,7 @@ func (k *kubeHelpers) setupKubeVip(ctx context.Context, cfg kubeVipConfig) {
 									{
 										MatchExpressions: []corev1.NodeSelectorRequirement{
 											{
-												Key:      node.ControlPlaneNodeLabel,
+												Key:      microk8s.ControlPlaneNodeLabel,
 												Operator: corev1.NodeSelectorOpExists,
 											},
 										},
