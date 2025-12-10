@@ -41,7 +41,6 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	cfg := testEnvConfig{name: "kubernetes-ccm-test-fip-controlplane", fipTag: fipTag}
 	env := setupTestEnv(t, cfg)
 	ctx := env.ctx
-	var np batchNodeProvisioner = env.nodeProvisioner
 
 	fip, _, err := cherryClient.IPAddresses.Create(
 		env.project.ID, &cherrygo.CreateIPAddress{
@@ -63,7 +62,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 
 	// Provision enough nodes, so that we don't fall below two for the cluster,
 	// otherwise dqlite quorum breaks.
-	nodes, errs := np.ProvisionBatch(ctx, 3)
+	nodes, errs := env.nodeProvisioner.ProvisionBatch(ctx, 3)
 	for _, err := range errs {
 		if err != nil {
 			t.Fatalf("failed to provision node: %v", err)

@@ -58,9 +58,8 @@ func TestNodeAddDelete(t *testing.T) {
 
 	env := setupTestEnv(t, cfg)
 	ctx := env.ctx
-	var np nodeProvisioner = env.nodeProvisioner
 
-	nn, err := np.Provision(ctx)
+	nn, err := env.nodeProvisioner.Provision(ctx)
 	if err != nil {
 		t.Fatalf("failed to provision node: %v", err)
 	}

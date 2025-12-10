@@ -37,7 +37,7 @@ func setupProject(t testing.TB, name string) cherrygo.Project {
 type testEnv struct {
 	project         cherrygo.Project
 	mainNode        *node.ControlPlaneNode
-	nodeProvisioner node.Microk8sNodeProvisioner
+	nodeProvisioner nodeProvisioner
 	k8sClient       kubernetes.Interface
 	ctx             context.Context
 }
@@ -50,9 +50,6 @@ type testEnvConfig struct {
 
 type nodeProvisioner interface {
 	Provision(context.Context) (*node.ControlPlaneNode, error)
-}
-
-type batchNodeProvisioner interface {
 	ProvisionBatch(context.Context, int) ([]*node.ControlPlaneNode, []error)
 }
 

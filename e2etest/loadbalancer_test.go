@@ -729,9 +729,8 @@ func TestMetalLB(t *testing.T) {
 		name: testName, loadBalancer: metallbSetting,
 	})
 	ctx := env.ctx
-	var np nodeProvisioner = env.nodeProvisioner
 
-	n, err := np.Provision(ctx)
+	n, err := env.nodeProvisioner.Provision(ctx)
 	if err != nil {
 		t.Fatalf("failed to provision node: %v", err)
 	}
@@ -775,9 +774,8 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 		name: testName, loadBalancer: kubeVipSetting,
 	})
 	ctx := env.ctx
-	var np nodeProvisioner = env.nodeProvisioner
 
-	n, err := np.Provision(ctx)
+	n, err := env.nodeProvisioner.Provision(ctx)
 	if err != nil {
 		t.Fatalf("failed to provision node: %v", err)
 	}
