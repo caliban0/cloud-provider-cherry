@@ -11,23 +11,28 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/cherryservers/cherrygo/v3"
 	"github.com/cherryservers/cloud-provider-cherry-tests/backoff"
+	"github.com/cherryservers/cloud-provider-cherry-tests/cherry"
 	"github.com/cherryservers/cloud-provider-cherry-tests/microk8s"
 )
 
-func untilIPHasTarget(ctx context.Context, ip cherrygo.IPAddress, target ...string) error {
+type FIPGetter interface {
+	GetFIP(id string) (cherry.FIP, error)
+}
+
+func untilIPHasTarget(ctx context.Context, getter FIPGetter, ip cherry.FIP, want ...string) error {
 	const timeout = 300 * time.Second
 	ctx, cancel := context.WithTimeoutCause(
 		ctx, timeout, errors.New("timeout out waiting for ip to get target"))
 	defer cancel()
 
 	return backoff.ExpBackoffWithContext(func() (bool, error) {
-		fip, _, err := cherryClient.IPAddresses.Get(ip.ID, nil)
+		fip, err := getter.GetFIP(ip.ID)
 		if err != nil {
 			return false, fmt.Errorf("failed to get fip: %w", err)
 		}
-		if slices.Contains(target, fip.TargetedTo.Hostname) {
+		got, _ := fip.TargetHostname()
+		if slices.Contains(want, got) {
 			return true, nil
 		}
 		return false, nil
@@ -42,20 +47,20 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	env := setupTestEnv(t, cfg)
 	ctx := env.ctx
 
-	fip, _, err := cherryClient.IPAddresses.Create(
-		env.project.ID, &cherrygo.CreateIPAddress{
-			Region: env.mainNode.Server.Region,
-			Tags:   &map[string]string{fipTag: ""}})
-
+	fip, err := getCherryClient(t).CreateFIP(cherry.NewFIPSpec{
+		ProjectID: env.project.ID,
+		Region: env.mainNode.Server.Region,
+		Tags:   map[string]string{fipTag: ""},
+	})
 	if err != nil {
-		t.Fatalf("failed to create cherry servers fip: %v", err)
+		t.Fatalf("failed to create a cherry servers fip: %v", err)
 	}
 
 	if err = env.mainNode.AssignIP(fip.Address); err != nil {
 		t.Fatalf("failed to assign ip %s to %s", fip.Address, env.mainNode.Server.Hostname)
 	}
 
-	err = untilIPHasTarget(ctx, fip, env.mainNode.Server.Hostname)
+	err = untilIPHasTarget(ctx, getCherryClient(t), fip, env.mainNode.Server.Hostname)
 	if err != nil {
 		t.Fatalf("fip %s didn't get attached to cp node: %v", fip.ID, err)
 	}
@@ -89,7 +94,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	wantTarget := env.mainNode.Server.Hostname
 
 	// test that fip remains attached to node after deleting another node
-	_, _, err = cherryClient.Servers.Delete(cp1.Server.ID)
+	err = getCherryClient(t).DeleteServer(cp1.Server.ID)
 	if err != nil {
 		t.Fatalf("failed to delete server %q: %v", cp1.Server.Hostname, err)
 	}
@@ -104,19 +109,20 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		t.Fatalf("node %q didn't get deleted: %v", k8sn.Name, err)
 	}
 
-	fip, _, err = cherryClient.IPAddresses.Get(fip.ID, nil)
+	fip, err = getCherryClient(t).GetFIP(fip.ID)
 	if err != nil {
-		t.Fatalf("failed to get fip %s: %v", fip.ID, err)
+		t.Fatalf("failed to get fip: %v", err)
 	}
-	if fip.TargetedTo.Hostname != wantTarget {
-		t.Fatalf("fip %s target: %q, want %q", fip.ID, fip.TargetedTo.Hostname, wantTarget)
+
+	if got, _ := fip.TargetHostname(); got != wantTarget {
+		t.Fatalf("fip %s target: %q, want %q", fip.ID, got, wantTarget)
 	}
 
 	// test that fip is reattached when a cp node is disabled
 
 	// Reassign the FIP, so that we don't have to shut down the main node,
 	// since the main node is the one that has the CCM image side-loaded.
-	_, _, err = cherryClient.IPAddresses.Assign(fip.ID, &cherrygo.AssignIPAddress{ServerID: cp2.Server.ID})
+	_, err = getCherryClient(t).AssignFIP(fip.ID, cp2.Server.ID)
 	if err != nil {
 		t.Fatalf("failed to re-assign ip %s: %v", fip.ID, err)
 	}
@@ -128,7 +134,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 
 	wantTargets := []string{wantTarget, cp3.Server.Hostname}
 
-	err = untilIPHasTarget(ctx, fip, wantTargets...)
+	err = untilIPHasTarget(ctx, getCherryClient(t), fip, wantTargets...)
 	if err != nil {
 		t.Fatalf("fip %s didn't get attached to any of cp nodes %v: %v", fip.ID, wantTargets, err)
 	}
