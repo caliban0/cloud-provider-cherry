@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cherryservers/cherrygo/v3"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/cherryservers/cloud-provider-cherry-tests/backoff"
+	"github.com/cherryservers/cloud-provider-cherry-tests/cherry"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -31,18 +31,14 @@ const (
 )
 
 type Node struct {
-	Server    cherrygo.Server
+	Server    cherry.Server
 	cmdRunner sshCmdRunner
 }
 
 // runCmd runs a shell command on the node via SSH.
 // Passing nil stdin is fine.
 func (n *Node) runCmd(cmd string, stdin io.Reader) (resp string, err error) {
-	ip, err := serverPublicIP(n.Server)
-	if err != nil {
-		return "", err
-	}
-	return n.cmdRunner.run(ip, cmd, stdin)
+	return n.cmdRunner.run(n.Server.PublicIP, cmd, stdin)
 }
 
 type nodeConditionFunc func(node *corev1.Node) bool
@@ -112,11 +108,7 @@ func (n *Node) LoadImage(ociPath string) error {
 	}
 	defer oci.Close()
 
-	addr, err := serverPublicIP(n.Server)
-	if err != nil {
-		return fmt.Errorf("server %q has no public ip", n.Server.Hostname)
-	}
-	r, err := n.cmdRunner.run(addr, "microk8s ctr image import - ", oci)
+	r, err := n.cmdRunner.run(n.Server.PublicIP, "microk8s ctr image import - ", oci)
 	if err != nil {
 		return fmt.Errorf("failed to load image: %w, with stderr: %s", err, r)
 	}
@@ -174,16 +166,12 @@ func (n *ControlPlaneNode) getJoinCmd(worker bool) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("couldn't get join URL from control plane node: %w", err)
 	}
-	ip, err := serverPublicIP(n.Server)
-	if err != nil {
-		return "", err
-	}
 
 	// parse the microk8s join invitation response message
 	// looking for public ip
 	joinCmd := ""
 	for line := range strings.Lines(r) {
-		if strings.Contains(line, ip) {
+		if strings.Contains(line, n.Server.PublicIP) {
 			joinCmd = line[:len(line)-1] // strip newline
 		}
 	}
@@ -322,14 +310,9 @@ func untilKubeAPIReady(ctx context.Context, n Node) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	ip, err := serverPublicIP(n.Server)
-	if err != nil {
-		return "", fmt.Errorf("couldn't get server ip: %w", err)
-	}
-
-	err = backoff.ExpBackoffWithContext(func() (bool, error) {
+	err := backoff.ExpBackoffWithContext(func() (bool, error) {
 		// Check if kube-api is reachable. Non-zero exit code will be returned if not.
-		_, err := n.cmdRunner.run(ip, "microk8s kubectl get --raw='/readyz'", nil)
+		_, err := n.cmdRunner.run(n.Server.PublicIP, "microk8s kubectl get --raw='/readyz'", nil)
 		if err != nil {
 			return false, nil
 		}
@@ -339,20 +322,11 @@ func untilKubeAPIReady(ctx context.Context, n Node) (string, error) {
 		return "", fmt.Errorf("node kube-api didn't become reachable: %w", err)
 	}
 
-	kubeconfig, err := n.cmdRunner.run(ip, "microk8s config", nil)
+	kubeconfig, err := n.cmdRunner.run(n.Server.PublicIP, "microk8s config", nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to get kubeconfig %w", err)
 	}
 	return kubeconfig, nil
-}
-
-func serverPublicIP(srv cherrygo.Server) (string, error) {
-	for _, ip := range srv.IPAddresses {
-		if ip.Type == "primary-ip" {
-			return ip.Address, nil
-		}
-	}
-	return "", fmt.Errorf("server %d has no public ip", srv.ID)
 }
 
 func newK8sClient(kubeconfig string) (*kubernetes.Clientset, error) {

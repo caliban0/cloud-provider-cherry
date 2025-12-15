@@ -16,6 +16,7 @@ import (
 
 	"github.com/cherryservers/cherrygo/v3"
 	"github.com/cherryservers/cloud-provider-cherry-tests/backoff"
+	"github.com/cherryservers/cloud-provider-cherry-tests/cherry"
 	"github.com/cherryservers/cloud-provider-cherry-tests/microk8s"
 	ccm "github.com/cherryservers/cloud-provider-cherry/cherry"
 	appsv1 "k8s.io/api/apps/v1"
@@ -32,7 +33,7 @@ import (
 )
 
 // Ensures project has non-zero ASN.
-func ensureProjectAsn(ctx context.Context, t testing.TB, project cherrygo.Project, projectServer cherrygo.Server) cherrygo.Project {
+func ensureProjectAsn(ctx context.Context, t testing.TB, project cherrygo.Project, projectServer cherry.Server) cherrygo.Project {
 	// We need a local ASN to deploy kube-vip, but
 	// cherry servers only assigns a local ASN
 	// to a project once there's a server with BGP enabled.
@@ -792,8 +793,8 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 
 	kubeHelper.setupKubeVip(ctx, kubeVipConfig{
 		localAsn:    strconv.Itoa(env.project.Bgp.LocalASN),
-		peerAsn:     strconv.Itoa(env.mainNode.Server.Region.BGP.Asn),
-		peerAddress: env.mainNode.Server.Region.BGP.Hosts[0],
+		peerAsn:     strconv.Itoa(env.mainNode.Server.PeerASN),
+		peerAddress: env.mainNode.Server.PeerAddresses[0],
 		version:     *kubeVipVersion,
 	})
 

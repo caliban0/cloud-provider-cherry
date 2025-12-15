@@ -12,6 +12,7 @@ import (
 	"github.com/cherryservers/cherrygo/v3"
 	"k8s.io/client-go/kubernetes"
 
+	"github.com/cherryservers/cloud-provider-cherry-tests/cherry"
 	"github.com/cherryservers/cloud-provider-cherry-tests/microk8s"
 	ccm "github.com/cherryservers/cloud-provider-cherry/cherry"
 	corev1 "k8s.io/api/core/v1"
@@ -60,8 +61,14 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 	// Setup project:
 	project := setupProject(t, cfg.name)
 
+	// Setup Cherry Servers API client.
+	cherry, err := cherry.NewClient(cherryClient.AuthToken)
+	if err != nil {
+		t.Fatalf("failed to setup Cherry Servers API client: %v", err)
+	}
+
 	// Setup node provisioner:
-	np, err := microk8s.NewNodeProvisioner(cfg.name, *k8sVersion, *serverPlan, *region, project.ID, *cherryClient)
+	np, err := microk8s.NewNodeProvisioner(cfg.name, *k8sVersion, *serverPlan, *region, project.ID, cherry)
 	if err != nil {
 		t.Fatalf("failed to setup node provisioner: %v", err)
 	}

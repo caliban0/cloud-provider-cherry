@@ -11,8 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cherryservers/cherrygo/v3"
-	"github.com/cherryservers/cloud-provider-cherry-tests/backoff"
+	"github.com/cherryservers/cloud-provider-cherry-tests/cherry"
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -21,8 +20,15 @@ import (
 	"k8s.io/client-go/tools/watch"
 )
 
+type cherryClient interface {
+	ProvisionServer(context.Context, cherry.NewServerSpec) (cherry.Server, error)
+	DeleteProject(int) error
+	CreateSSHKey(cherry.NewSSHKeySpec) (cherry.SSHKey, error)
+	DeleteSSHKey(int) error
+}
+
 type NodeProvisioner struct {
-	cherryClient cherrygo.Client
+	cherryClient cherryClient
 	projectID    int
 	sshKeyID     string
 	serverPlan   string
@@ -49,7 +55,13 @@ func (np NodeProvisioner) Provision(ctx context.Context) (*ControlPlaneNode, err
 	userDataRaw = bytes.ReplaceAll(userDataRaw, []byte(k8sVersionVar), []byte(np.k8sVersion))
 	userdata := base64.StdEncoding.EncodeToString(userDataRaw)
 
-	srv, err := provisionServer(ctx, np.cherryClient, np.projectID, userdata, np.sshKeyID, np.serverPlan, np.region)
+	srv, err := np.cherryClient.ProvisionServer(ctx, cherry.NewServerSpec{
+		ProjectID: np.projectID,
+		UserData:  userdata,
+		SSHKeyID:  np.sshKeyID,
+		Plan:      np.serverPlan,
+		Region:    np.region,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to provision server: %w", err)
 	}
@@ -157,13 +169,13 @@ func (np NodeProvisioner) untilProvisioned(ctx context.Context, n *ControlPlaneN
 }
 
 func (np NodeProvisioner) Cleanup() error {
-	_, projectErr := np.cherryClient.Projects.Delete(np.projectID)
+	projectErr := np.cherryClient.DeleteProject(np.projectID)
 	sshID, convErr := strconv.Atoi(np.sshKeyID)
-	_, _, sshErr := np.cherryClient.SSHKeys.Delete(sshID)
+	sshErr := np.cherryClient.DeleteSSHKey(sshID)
 	return errors.Join(projectErr, convErr, sshErr)
 }
 
-func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, projectID int, cc cherrygo.Client) (NodeProvisioner, error) {
+func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, projectID int, cc cherryClient) (NodeProvisioner, error) {
 	// Create a SSH key signer:
 	sshRunner, err := newSSHCmdRunner()
 	if err != nil {
@@ -173,9 +185,9 @@ func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, project
 	// Create SSH key on Cherry servers:
 	pub := ssh.MarshalAuthorizedKey(sshRunner.signer.PublicKey())
 	pub = pub[:len(pub)-1] // strip newline
-	sshKey, _, err := cc.SSHKeys.Create(&cherrygo.CreateSSHKey{
-		Label: testName,
-		Key:   string(pub),
+	sshKey, err := cc.CreateSSHKey(cherry.NewSSHKeySpec{
+		Label:     testName,
+		PublicKey: string(pub),
 	})
 	if err != nil {
 		return NodeProvisioner{}, fmt.Errorf("failed to create SSH key on cherry servers: %v", err)
@@ -190,43 +202,4 @@ func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, project
 		cmdRunner:    *sshRunner,
 		k8sVersion:   k8sVersion,
 	}, nil
-}
-
-func provisionServer(ctx context.Context, cc cherrygo.Client, projectID int, userdata, sshkeyID, serverPlan, region string) (cherrygo.Server, error) {
-	const (
-		serverImage = "ubuntu_24_04_64bit"
-		timeout     = time.Minute * 15
-	)
-
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	srv, _, err := cc.Servers.Create(&cherrygo.CreateServer{
-		ProjectID: projectID,
-		Plan:      serverPlan,
-		Region:    region,
-		Image:     serverImage,
-		UserData:  userdata,
-		SSHKeys:   []string{sshkeyID},
-	})
-
-	if err != nil {
-		return cherrygo.Server{}, fmt.Errorf("failed to create server: %w", err)
-	}
-
-	err = backoff.ExpBackoffWithContext(func() (bool, error) {
-		srv, _, err = cc.Servers.Get(srv.ID, nil)
-		if err != nil {
-			return false, fmt.Errorf("failed to get server: %w", err)
-		}
-		if srv.State == "active" {
-			return true, nil
-		}
-		return false, nil
-	}, backoff.DefaultExpBackoffConfigWithContext(ctx))
-	if err != nil {
-		return cherrygo.Server{}, fmt.Errorf("server didn't reach active state: %w", err)
-	}
-
-	return srv, nil
 }

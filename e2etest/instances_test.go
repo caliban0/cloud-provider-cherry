@@ -81,11 +81,11 @@ func TestNodeAddDelete(t *testing.T) {
 	}
 
 	// check metadata
-	if got, want := k8sn.Labels["topology.kubernetes.io/region"], n.Server.Region.Slug; got != want {
+	if got, want := k8sn.Labels["topology.kubernetes.io/region"], n.Server.Region; got != want {
 		t.Errorf("got region %q, want %q", got, want)
 	}
 
-	wantPlan := n.Server.Plan.Slug
+	wantPlan := n.Server.Plan
 	if got, want := k8sn.Labels["node.kubernetes.io/instance-type"], wantPlan; got != want {
 		t.Errorf("got instance type %q, want %q", got, want)
 	}
@@ -97,24 +97,12 @@ func TestNodeAddDelete(t *testing.T) {
 				t.Errorf("got hostname %q, want %q", address.Address, n.Server.Hostname)
 			}
 		case corev1.NodeExternalIP:
-			found := false
-			for _, srvAddress := range n.Server.IPAddresses {
-				if srvAddress.Address == address.Address && srvAddress.Type == "primary-ip" {
-					found = true
-				}
-			}
-			if !found {
-				t.Errorf("no matching public server ip for node external ip %q", address.Address)
+			if n.Server.PublicIP != address.Address {
+				t.Errorf("node external ip %q doesn't match server public ip %q", address.Address, n.Server.PublicIP)
 			}
 		case corev1.NodeInternalIP:
-			found := false
-			for _, srvAddress := range n.Server.IPAddresses {
-				if srvAddress.Address == address.Address && srvAddress.Type == "private-ip" {
-					found = true
-				}
-			}
-			if !found {
-				t.Errorf("no matching private server ip for node internal ip %q", address.Address)
+			if n.Server.PrivateIP != address.Address {
+				t.Errorf("node internal ip %q doesn't match server private ip %q", address.Address, n.Server.PrivateIP)
 			}
 		}
 

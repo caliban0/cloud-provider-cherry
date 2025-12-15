@@ -12,11 +12,25 @@ import (
 type Server struct {
 	ID       int
 	Hostname string
-	PublicIP string
+
+	// Region slug.
+	Region string
+
+	// Plan slug.
+	Plan      string
+	PublicIP  string
+	PrivateIP string
+	ServerBGP
+}
+
+type ServerBGP struct {
+	PeerASN       int
+	PeerAddresses []string
 }
 
 // Pseudo-constant for the server fields we want to get from the API.
-var serverGetFields = []string{"id", "hostname", "ip_addresses", "address", "type", "state"}
+var serverGetFields = []string{"id", "hostname", "ip_addresses",
+	"address", "type", "state", "region", "plan"}
 
 // GetServer gets a server from Cherry Servers.
 func (c Client) GetServer(id int) (Server, error) {
@@ -27,12 +41,21 @@ func (c Client) GetServer(id int) (Server, error) {
 		return Server{}, fmt.Errorf("couldn't get %d server: %w", id, err)
 	}
 
-	ip, ok := publicIP(srv.IPAddresses)
-	if !ok {
-		return Server{}, fmt.Errorf("server %d doesn't have a public IP", id)
+	pub, priv, err := serverIPs(srv)
+	if err != nil {
+		return Server{}, err
 	}
 
-	s := Server{ID: srv.ID, Hostname: srv.Hostname, PublicIP: ip}
+	s := Server{ID: srv.ID,
+		Hostname:  srv.Hostname,
+		Region:    srv.Region.Slug,
+		Plan:      srv.Plan.Slug,
+		PublicIP:  pub,
+		PrivateIP: priv,
+		ServerBGP: ServerBGP{
+			PeerASN:       srv.Region.BGP.Asn,
+			PeerAddresses: srv.Region.BGP.Hosts,
+		}}
 
 	return s, nil
 }
@@ -102,22 +125,53 @@ func (c Client) untilServerActive(ctx context.Context, id int) (Server, error) {
 			}
 
 			if s.State == "active" {
-				ip, ok := publicIP(s.IPAddresses)
-				if !ok {
-					return Server{}, fmt.Errorf("server %d doesn't have a public IP", id)
+				pub, priv, err := serverIPs(s)
+				if err != nil {
+					return Server{}, err
 				}
-				return Server{ID: s.ID, Hostname: s.Hostname, PublicIP: ip}, nil
+				return Server{ID: s.ID,
+					Hostname:  s.Hostname,
+					Region:    s.Region.Slug,
+					Plan:      s.Plan.Slug,
+					PublicIP:  pub,
+					PrivateIP: priv,
+					ServerBGP: ServerBGP{
+						PeerASN:       s.Region.BGP.Asn,
+						PeerAddresses: s.Region.BGP.Hosts,
+					}}, nil
 			}
 		}
 	}
 }
 
-// publicIP finds any public IP, if one exists in the slice.
-func publicIP(a []cherrygo.IPAddress) (string, bool) {
-	for i := range a {
-		if a[i].Type == "primary-ip" {
-			return a[i].Address, true
+// serverIPs gets a server's public and private IP,
+// if it has them.
+func serverIPs(s cherrygo.Server) (pub, priv string, err error) {
+	pub, priv, ok := publicPrivate(s.IPAddresses)
+	if !ok {
+		if pub == "" && priv == "" {
+			return pub, priv, fmt.Errorf("server %d has no public or private ip", s.ID)
+		}
+		if pub == "" {
+			return pub, priv, fmt.Errorf("server %d has no public ip", s.ID)
+		}
+		if priv == "" {
+			return pub, priv, fmt.Errorf("server %d has no private ip", s.ID)
 		}
 	}
-	return "", false
+	return pub, priv, nil
+}
+
+// publicPrivate finds any tuple of public and private IP addresses,
+// if they exist in the slice.
+func publicPrivate(a []cherrygo.IPAddress) (pub, priv string, ok bool) {
+	for i := range a {
+		switch a[i].Type {
+		case "primary-ip":
+			pub = a[i].Address
+		case "private-ip":
+			priv = a[i].Address
+		}
+	}
+	return pub, priv, pub != "" && priv != ""
 }

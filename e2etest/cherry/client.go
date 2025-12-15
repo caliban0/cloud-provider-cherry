@@ -23,6 +23,9 @@ type projectClient interface {
 	Delete(projectID int) (*cherrygo.Response, error)
 }
 
+// Client is an abstraction over the [github.com/cherryservers/cherrygo/v3]
+// Cherry Servers API client library.
+// It isolates Cherry Servers resource management from test logic.
 type Client struct {
 	server  serverClient
 	sshKey  sshKeyClient
