@@ -12,6 +12,7 @@ import (
 type serverClient interface {
 	Create(*cherrygo.CreateServer) (cherrygo.Server, *cherrygo.Response, error)
 	Get(int, *cherrygo.GetOptions) (cherrygo.Server, *cherrygo.Response, error)
+	Delete(serverID int) (cherrygo.	Server, *cherrygo.Response, error)
 }
 
 type sshKeyClient interface {

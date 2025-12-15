@@ -144,6 +144,15 @@ func (c Client) untilServerActive(ctx context.Context, id int) (Server, error) {
 	}
 }
 
+// DeleteServer deletes a server on Cherry Servers.
+func (c Client) DeleteServer(id int) error {
+	_, _, err := c.server.Delete(id)
+	if err != nil {
+		return fmt.Errorf("couldn't delete server %d", id) 
+	}
+	return nil
+}
+
 // serverIPs gets a server's public and private IP,
 // if it has them.
 func serverIPs(s cherrygo.Server) (pub, priv string, err error) {
