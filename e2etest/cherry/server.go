@@ -13,8 +13,6 @@ type Server struct {
 	ID       int
 	Hostname string
 	PublicIP string
-
-	state string
 }
 
 // Pseudo-constant for the server fields we want to get from the API.
@@ -34,7 +32,7 @@ func (c Client) GetServer(id int) (Server, error) {
 		return Server{}, fmt.Errorf("server %d doesn't have a public IP", id)
 	}
 
-	s := Server{ID: srv.ID, Hostname: srv.Hostname, PublicIP: ip, state: srv.State}
+	s := Server{ID: srv.ID, Hostname: srv.Hostname, PublicIP: ip}
 
 	return s, nil
 }
@@ -108,7 +106,7 @@ func (c Client) untilServerActive(ctx context.Context, id int) (Server, error) {
 				if !ok {
 					return Server{}, fmt.Errorf("server %d doesn't have a public IP", id)
 				}
-				return Server{ID: s.ID, Hostname: s.Hostname, PublicIP: ip, state: s.State}, nil
+				return Server{ID: s.ID, Hostname: s.Hostname, PublicIP: ip}, nil
 			}
 		}
 	}

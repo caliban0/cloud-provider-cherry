@@ -14,8 +14,15 @@ type serverClient interface {
 	Get(int, *cherrygo.GetOptions) (cherrygo.Server, *cherrygo.Response, error)
 }
 
+type sshKeyClient interface {
+	Create(request *cherrygo.CreateSSHKey) (cherrygo.SSHKey, *cherrygo.Response, error)
+	Delete(sshKeyID int) (cherrygo.SSHKey, *cherrygo.Response, error)
+}
+
 type Client struct {
-	server       serverClient
+	server serverClient
+	sshKey sshKeyClient
+
 	maxJitter    time.Duration
 	pollInterval time.Duration
 }
@@ -32,6 +39,7 @@ func NewClient(authToken string) (Client, error) {
 	}
 
 	return Client{server: c.Servers,
+		sshKey: c.SSHKeys,
 		maxJitter:    defaultMaxJitter,
 		pollInterval: defaultPollInterval}, nil
 }
