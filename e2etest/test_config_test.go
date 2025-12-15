@@ -8,6 +8,8 @@ import (
 	"github.com/cherryservers/cloud-provider-cherry-tests/cherry"
 )
 
+// TODO Cherry client should be an interface that's defined here.
+
 // TODO: rename to cherryClient, once refactor done
 var getCherryClient = func() func(t *testing.T) cherry.Client {
 	var (

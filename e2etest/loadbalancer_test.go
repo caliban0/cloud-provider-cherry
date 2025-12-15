@@ -16,7 +16,6 @@ import (
 
 	"github.com/cherryservers/cherrygo/v3"
 	"github.com/cherryservers/cloud-provider-cherry-tests/backoff"
-	"github.com/cherryservers/cloud-provider-cherry-tests/cherry"
 	"github.com/cherryservers/cloud-provider-cherry-tests/microk8s"
 	ccm "github.com/cherryservers/cloud-provider-cherry/cherry"
 	appsv1 "k8s.io/api/apps/v1"
@@ -31,43 +30,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/watch"
 )
-
-// Ensures project has non-zero ASN.
-func ensureProjectAsn(ctx context.Context, t testing.TB, project cherrygo.Project, projectServer cherry.Server) cherrygo.Project {
-	// We need a local ASN to deploy kube-vip, but
-	// cherry servers only assigns a local ASN
-	// to a project once there's a server with BGP enabled.
-	// Since the LB controller is supposed to enable BGP on a per-node basis,
-	// we enable BGP on the node, get our ASN, and then disable it, so
-	// that the enabler can be tested.
-	t.Helper()
-
-	_, _, err := cherryClient.Servers.Update(projectServer.ID, &cherrygo.UpdateServer{Bgp: true})
-	if err != nil {
-		t.Fatalf("failed to enable bgp on server %q: %v", projectServer.Hostname, err)
-	}
-
-	err = backoff.ExpBackoffWithContext(func() (bool, error) {
-		project, _, err = cherryClient.Projects.Get(project.ID, nil)
-		if err != nil {
-			return false, fmt.Errorf("failed to get project: %w", err)
-		}
-		if project.Bgp.LocalASN == 0 {
-			return false, nil
-		}
-		return true, nil
-	}, backoff.DefaultExpBackoffConfigWithContext(ctx))
-	if err != nil {
-		t.Fatalf("couldn't establish project asn: %v", err)
-	}
-
-	_, _, err = cherryClient.Servers.Update(projectServer.ID, &cherrygo.UpdateServer{Bgp: false})
-	if err != nil {
-		t.Fatalf("failed to disable bgp on server %q: %v", projectServer.Hostname, err)
-	}
-
-	return project
-}
 
 type kubeHelpers struct {
 	t      testing.TB
@@ -787,12 +749,20 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 	}
 
 	// We need a local ASN to deploy kube-vip.
-	env.project = ensureProjectAsn(ctx, t, env.project, env.mainNode.Server)
+	env.project, err = getCherryClient(t).ForceProjectASN(ctx, env.project)
+	if err != nil {
+		t.Fatalf("failed to force ASN for kube-vip project: %v", err)
+	}
 
 	kubeHelper := kubeHelpers{t, env.k8sClient}
 
+	localASN, ok := env.project.LocalASN()
+	if !ok {
+		t.Fatalf("kube-vip project doesn't have a local ASN")
+	}
+
 	kubeHelper.setupKubeVip(ctx, kubeVipConfig{
-		localAsn:    strconv.Itoa(env.project.Bgp.LocalASN),
+		localAsn:    strconv.Itoa(localASN),
 		peerAsn:     strconv.Itoa(env.mainNode.Server.PeerASN),
 		peerAddress: env.mainNode.Server.PeerAddresses[0],
 		version:     *kubeVipVersion,

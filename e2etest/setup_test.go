@@ -9,7 +9,6 @@ import (
 
 	"testing"
 
-	"github.com/cherryservers/cherrygo/v3"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/cherryservers/cloud-provider-cherry-tests/cherry"
@@ -24,19 +23,19 @@ const (
 	kubeVipSetting = "kube-vip://"
 )
 
-func setupProject(t testing.TB, name string) cherrygo.Project {
+func setupProject(t *testing.T, name string) cherry.Project {
 	t.Helper()
 
-	project, _, err := cherryClient.Projects.Create(*teamID, &cherrygo.CreateProject{
-		Name: name})
+	p, err := getCherryClient(t).CreateProject(
+		cherry.NewProjectSpec{TeamID: *teamID, Name: name})
 	if err != nil {
-		t.Fatalf("failed to setup cherry servers project: %v", err)
+		t.Fatalf("%v", err)
 	}
-	return project
+	return p
 }
 
 type testEnv struct {
-	project         cherrygo.Project
+	project         cherry.Project
 	mainNode        *microk8s.ControlPlaneNode
 	nodeProvisioner nodeProvisioner
 	k8sClient       kubernetes.Interface
@@ -61,14 +60,9 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 	// Setup project:
 	project := setupProject(t, cfg.name)
 
-	// Setup Cherry Servers API client.
-	cherry, err := cherry.NewClient(cherryClient.AuthToken)
-	if err != nil {
-		t.Fatalf("failed to setup Cherry Servers API client: %v", err)
-	}
-
 	// Setup node provisioner:
-	np, err := microk8s.NewNodeProvisioner(cfg.name, *k8sVersion, *serverPlan, *region, project.ID, cherry)
+	np, err := microk8s.NewNodeProvisioner(
+		cfg.name, *k8sVersion, *serverPlan, *region, project.ID, getCherryClient(t))
 	if err != nil {
 		t.Fatalf("failed to setup node provisioner: %v", err)
 	}

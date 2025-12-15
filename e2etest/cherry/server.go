@@ -3,8 +3,6 @@ package cherry
 import (
 	"context"
 	"fmt"
-	"math/rand"
-	"time"
 
 	"github.com/cherryservers/cherrygo/v3"
 )
@@ -26,11 +24,34 @@ type Server struct {
 type ServerBGP struct {
 	PeerASN       int
 	PeerAddresses []string
+	Enabled       bool
+}
+
+// serverFrom builds a Server from a [github.com/cherryservers/cherrygo/v3] server.
+func serverFrom(sg cherrygo.Server) (Server, error) {
+	pub, priv, err := serverIPs(sg)
+	if err != nil {
+		return Server{}, err
+	}
+
+	s := Server{ID: sg.ID,
+		Hostname:  sg.Hostname,
+		Region:    sg.Region.Slug,
+		Plan:      sg.Plan.Slug,
+		PublicIP:  pub,
+		PrivateIP: priv,
+		ServerBGP: ServerBGP{
+			PeerASN:       sg.Region.BGP.Asn,
+			PeerAddresses: sg.Region.BGP.Hosts,
+			Enabled:       sg.BGP.Enabled,
+		}}
+
+	return s, nil
 }
 
 // Pseudo-constant for the server fields we want to get from the API.
 var serverGetFields = []string{"id", "hostname", "ip_addresses",
-	"address", "type", "state", "region", "plan"}
+	"address", "type", "state", "region", "plan", "bgp"}
 
 // GetServer gets a server from Cherry Servers.
 func (c Client) GetServer(id int) (Server, error) {
@@ -41,22 +62,28 @@ func (c Client) GetServer(id int) (Server, error) {
 		return Server{}, fmt.Errorf("couldn't get %d server: %w", id, err)
 	}
 
-	pub, priv, err := serverIPs(srv)
+	s, err := serverFrom(srv)
 	if err != nil {
-		return Server{}, err
+		return s, fmt.Errorf("couldn't create a server object from a cherrygo server: %w", err)
 	}
 
-	s := Server{ID: srv.ID,
-		Hostname:  srv.Hostname,
-		Region:    srv.Region.Slug,
-		Plan:      srv.Plan.Slug,
-		PublicIP:  pub,
-		PrivateIP: priv,
-		ServerBGP: ServerBGP{
-			PeerASN:       srv.Region.BGP.Asn,
-			PeerAddresses: srv.Region.BGP.Hosts,
-		}}
+	return s, nil
+}
 
+// ListServers lists all servers that belong to a Cherry Servers project.
+func (c Client) ListServers(projectID int) ([]Server, error) {
+	srv, _, err := c.server.List(projectID, &cherrygo.GetOptions{Fields: serverGetFields})
+	if err != nil {
+		return nil, fmt.Errorf("couldn't list servers for project %d: %w", projectID, err)
+	}
+	s := make([]Server, len(srv))
+	for i := range srv {
+		fs, err := serverFrom(srv[i])
+		if err != nil {
+			return nil, fmt.Errorf("couldn't create a server object from a cherrygo server: %w", err)
+		}
+		s[i] = fs
+	}
 	return s, nil
 }
 
@@ -109,36 +136,25 @@ func (c Client) createServer(spec NewServerSpec) (int, error) {
 
 // untilServerActive waits for a server to become active.
 func (c Client) untilServerActive(ctx context.Context, id int) (Server, error) {
-	jitter := time.Duration(rand.Intn(int(c.maxJitter.Milliseconds()))+1) * time.Millisecond
-	t := time.NewTicker(c.pollInterval + jitter)
+	t := c.newTicker()
 
 	for {
 		select {
 		case <-ctx.Done():
-			t.Stop()
 			return Server{}, ctx.Err()
 		case <-t.C:
 			// Server might not have all fields set yet, so we can't use GetServer.
-			s, _, err := c.server.Get(id, &cherrygo.GetOptions{Fields: serverGetFields})
+			srv, _, err := c.server.Get(id, &cherrygo.GetOptions{Fields: serverGetFields})
 			if err != nil {
 				return Server{}, fmt.Errorf("couldn't get server %d: %w", id, err)
 			}
 
-			if s.State == "active" {
-				pub, priv, err := serverIPs(s)
+			if srv.State == "active" {
+				s, err := serverFrom(srv)
 				if err != nil {
-					return Server{}, err
+					return s, fmt.Errorf("couldn't create a server object from a cherrygo server: %w", err)
 				}
-				return Server{ID: s.ID,
-					Hostname:  s.Hostname,
-					Region:    s.Region.Slug,
-					Plan:      s.Plan.Slug,
-					PublicIP:  pub,
-					PrivateIP: priv,
-					ServerBGP: ServerBGP{
-						PeerASN:       s.Region.BGP.Asn,
-						PeerAddresses: s.Region.BGP.Hosts,
-					}}, nil
+				return s, nil
 			}
 		}
 	}
@@ -148,9 +164,25 @@ func (c Client) untilServerActive(ctx context.Context, id int) (Server, error) {
 func (c Client) DeleteServer(id int) error {
 	_, _, err := c.server.Delete(id)
 	if err != nil {
-		return fmt.Errorf("couldn't delete server %d", id) 
+		return fmt.Errorf("couldn't delete server %d", id)
 	}
 	return nil
+}
+
+type ServerUpdateSpec struct {
+	BGPEnabled bool
+}
+
+// UpdateServer updates a server on Cherry Servers.
+// Does a GET request after the update, because the response
+// from an update request doesn't contain all the expected fields.
+func (c Client) UpdateServer(id int, spec ServerUpdateSpec) (Server, error) {
+	_, _, err := c.server.Update(id, &cherrygo.UpdateServer{Bgp: spec.BGPEnabled})
+	if err != nil {
+		return Server{}, fmt.Errorf("couldn't update server %d, with update spec %v: %w", id, spec, err)
+	}
+
+	return c.GetServer(id)
 }
 
 // serverIPs gets a server's public and private IP,
