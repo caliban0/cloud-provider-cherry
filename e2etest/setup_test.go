@@ -67,9 +67,9 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 		*serverPlan,
 		*region,
 		project.ID,
-		getCherryClient(t),
 		getCherryClient(t).Project,
 		getCherryClient(t).Server,
+		getCherryClient(t).SSHKey,
 	)
 	if err != nil {
 		t.Fatalf("failed to setup node provisioner: %v", err)

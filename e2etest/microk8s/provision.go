@@ -28,15 +28,15 @@ type serverProvisioner interface {
 	Provision(context.Context, cherry.NewServerSpec) (cherry.Server, error)
 }
 
-type cherryClient interface {
-	CreateSSHKey(cherry.NewSSHKeySpec) (cherry.SSHKey, error)
-	DeleteSSHKey(int) error
+type sshKeyClient interface {
+	Create(cherry.NewSSHKeySpec) (cherry.SSHKey, error)
+	Delete(int) error
 }
 
 type NodeProvisioner struct {
-	cherryClient      cherryClient
 	projectDeleter    projectDeleter
 	serverProvisioner serverProvisioner
+	sshKeyClient      sshKeyClient
 	projectID         int
 	sshKeyID          string
 	serverPlan        string
@@ -179,11 +179,11 @@ func (np NodeProvisioner) untilProvisioned(ctx context.Context, n *ControlPlaneN
 func (np NodeProvisioner) Cleanup() error {
 	projectErr := np.projectDeleter.Delete(np.projectID)
 	sshID, convErr := strconv.Atoi(np.sshKeyID)
-	sshErr := np.cherryClient.DeleteSSHKey(sshID)
+	sshErr := np.sshKeyClient.Delete(sshID)
 	return errors.Join(projectErr, convErr, sshErr)
 }
 
-func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, projectID int, cc cherryClient, pd projectDeleter, sp serverProvisioner) (NodeProvisioner, error) {
+func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, projectID int, pd projectDeleter, sp serverProvisioner, scd sshKeyClient) (NodeProvisioner, error) {
 	// Create a SSH key signer:
 	sshRunner, err := newSSHCmdRunner()
 	if err != nil {
@@ -193,7 +193,7 @@ func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, project
 	// Create SSH key on Cherry servers:
 	pub := ssh.MarshalAuthorizedKey(sshRunner.signer.PublicKey())
 	pub = pub[:len(pub)-1] // strip newline
-	sshKey, err := cc.CreateSSHKey(cherry.NewSSHKeySpec{
+	sshKey, err := scd.Create(cherry.NewSSHKeySpec{
 		Label:     testName,
 		PublicKey: string(pub),
 	})
@@ -202,9 +202,9 @@ func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, project
 	}
 
 	return NodeProvisioner{
-		cherryClient:      cc,
 		projectDeleter:    pd,
 		serverProvisioner: sp,
+		sshKeyClient:      scd,
 		projectID:         projectID,
 		sshKeyID:          strconv.Itoa(sshKey.ID),
 		serverPlan:        serverPlan,

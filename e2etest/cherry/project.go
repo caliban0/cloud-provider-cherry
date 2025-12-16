@@ -43,7 +43,7 @@ type serverListerUpdater interface {
 type ProjectClient struct {
 	c      projectClient
 	server serverListerUpdater
-	ticker      tickerFactory
+	ticker tickerFactory
 }
 
 func NewProjectClient(c projectClient, s serverListerUpdater, t tickerFactory) ProjectClient {

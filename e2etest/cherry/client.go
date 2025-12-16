@@ -10,11 +10,6 @@ import (
 	"github.com/cherryservers/cherrygo/v3"
 )
 
-type sshKeyClient interface {
-	Create(*cherrygo.CreateSSHKey) (cherrygo.SSHKey, *cherrygo.Response, error)
-	Delete(id int) (cherrygo.SSHKey, *cherrygo.Response, error)
-}
-
 // Client is an abstraction over the [github.com/cherryservers/cherrygo/v3]
 // Cherry Servers API client library.
 // It isolates Cherry Servers resource management from the test logic.
@@ -22,8 +17,7 @@ type Client struct {
 	IP      IPClient
 	Project ProjectClient
 	Server  ServerClient
-
-	sshKey sshKeyClient
+	SSHKey  SSHKeyClient
 
 	maxJitter    time.Duration
 	pollInterval time.Duration
@@ -44,7 +38,7 @@ func NewClient(authToken string) (Client, error) {
 
 	return Client{
 		Server:       NewServerClient(c.Servers, tf),
-		sshKey:       c.SSHKeys,
+		SSHKey:       NewSSHKeyClient(c.SSHKeys),
 		Project:      NewProjectClient(c.Projects, c.Servers, tf),
 		IP:           NewIPClient(c.IPAddresses),
 		maxJitter:    defaultMaxJitter,

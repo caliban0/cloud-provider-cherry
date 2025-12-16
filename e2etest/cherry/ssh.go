@@ -10,24 +10,37 @@ type SSHKey struct {
 	ID int
 }
 
+type sshKeyClient interface {
+	Create(*cherrygo.CreateSSHKey) (cherrygo.SSHKey, *cherrygo.Response, error)
+	Delete(id int) (cherrygo.SSHKey, *cherrygo.Response, error)
+}
+
+type SSHKeyClient struct {
+	c sshKeyClient
+}
+
+func NewSSHKeyClient(c sshKeyClient) SSHKeyClient {
+	return SSHKeyClient{c: c}
+}
+
 type NewSSHKeySpec struct {
-	// Label is a unique human-readable identifier for the key.
+	// Label is a name for the key.
 	Label     string
 	PublicKey string
 }
 
-// CreateSSHKey creates a new SSH key on Cherry Servers.
-func (c Client) CreateSSHKey(spec NewSSHKeySpec) (SSHKey, error) {
-	k, _, err := c.sshKey.Create(&cherrygo.CreateSSHKey{
+// Create creates a new SSH key on Cherry Servers.
+func (c SSHKeyClient) Create(spec NewSSHKeySpec) (SSHKey, error) {
+	k, _, err := c.c.Create(&cherrygo.CreateSSHKey{
 		Label: spec.Label,
 		Key:   spec.PublicKey,
 	})
 	return SSHKey{ID: k.ID}, err
 }
 
-// DeleteSSHKey deletes an SSH key from Cherry Servers.
-func (c Client) DeleteSSHKey(id int) error {
-	_, _, err := c.sshKey.Delete(id)
+// Delete deletes an SSH key from Cherry Servers.
+func (c SSHKeyClient) Delete(id int) error {
+	_, _, err := c.c.Delete(id)
 	if err != nil {
 		return fmt.Errorf("failed to delete ssh key %d: %w", id, err)
 	}
