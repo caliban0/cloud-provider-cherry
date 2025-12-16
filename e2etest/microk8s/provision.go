@@ -34,15 +34,15 @@ type sshKeyClient interface {
 }
 
 type NodeProvisioner struct {
-	projectDeleter    projectDeleter
-	serverProvisioner serverProvisioner
-	sshKeyClient      sshKeyClient
-	projectID         int
-	sshKeyID          string
-	serverPlan        string
-	region            string
-	cmdRunner         sshCmdRunner
-	k8sVersion        string
+	projectDeleter
+	serverProvisioner
+	sshKeyClient
+	projectID  int
+	sshKeyID   string
+	serverPlan string
+	region     string
+	cmdRunner  sshCmdRunner
+	k8sVersion string
 }
 
 // Provision creates a Cherry Servers server and waits for k8s to be running.

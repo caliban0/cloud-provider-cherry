@@ -18,7 +18,7 @@ type Server struct {
 	Plan      string
 	PublicIP  string
 	PrivateIP string
-	ServerBGP
+	BGP       ServerBGP
 }
 
 type ServerBGP struct {
@@ -40,7 +40,7 @@ func serverFrom(sg cherrygo.Server) (Server, error) {
 		Plan:      sg.Plan.Slug,
 		PublicIP:  pub,
 		PrivateIP: priv,
-		ServerBGP: ServerBGP{
+		BGP: ServerBGP{
 			PeerASN:       sg.Region.BGP.Asn,
 			PeerAddresses: sg.Region.BGP.Hosts,
 			Enabled:       sg.BGP.Enabled,
@@ -62,7 +62,7 @@ type ServerClient struct {
 	ticker tickerFactory
 }
 
-func NewServerClient(c serverClient, t tickerFactory) ServerClient {
+func newServerClient(c serverClient, t tickerFactory) ServerClient {
 	return ServerClient{c: c, ticker: t}
 }
 
@@ -160,7 +160,7 @@ func (c ServerClient) untilActive(ctx context.Context, id int) (Server, error) {
 		case <-ctx.Done():
 			return Server{}, ctx.Err()
 		case <-t.C:
-			// Server might not have all fields set yet, so we can't use GetServer.
+			// Server might not have all fields set yet, so we can't use Get.
 			srv, _, err := c.c.Get(id, &cherrygo.GetOptions{Fields: serverGetFields})
 			if err != nil {
 				return Server{}, fmt.Errorf("couldn't get server %d: %w", id, err)

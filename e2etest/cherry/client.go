@@ -18,11 +18,11 @@ type Client struct {
 	Project ProjectClient
 	Server  ServerClient
 	SSHKey  SSHKeyClient
-
-	maxJitter    time.Duration
-	pollInterval time.Duration
 }
 
+// NewClient creates a new Cherry Servers API client.
+// Request polling interval is set to a default of 10 seconds
+// and jitter of up to 1 second is added.
 func NewClient(authToken string) (Client, error) {
 	const (
 		defaultMaxJitter    = time.Second * 1
@@ -37,12 +37,11 @@ func NewClient(authToken string) (Client, error) {
 	tf := tickerFactory{maxJitter: defaultMaxJitter, pollInterval: defaultPollInterval}
 
 	return Client{
-		Server:       NewServerClient(c.Servers, tf),
-		SSHKey:       NewSSHKeyClient(c.SSHKeys),
-		Project:      NewProjectClient(c.Projects, c.Servers, tf),
-		IP:           NewIPClient(c.IPAddresses),
-		maxJitter:    defaultMaxJitter,
-		pollInterval: defaultPollInterval}, nil
+		Server:  newServerClient(c.Servers, tf),
+		SSHKey:  newSSHKeyClient(c.SSHKeys),
+		Project: newProjectClient(c.Projects, c.Servers, tf),
+		IP:      newIPClient(c.IPAddresses),
+	}, nil
 }
 
 type tickerFactory struct {
@@ -53,9 +52,4 @@ type tickerFactory struct {
 func (t tickerFactory) newTicker() *time.Ticker {
 	jitter := time.Duration(rand.Intn(int(t.maxJitter.Milliseconds()))+1) * time.Millisecond
 	return time.NewTicker(t.pollInterval + jitter)
-}
-
-func (c Client) newTicker() *time.Ticker {
-	jitter := time.Duration(rand.Intn(int(c.maxJitter.Milliseconds()))+1) * time.Millisecond
-	return time.NewTicker(c.pollInterval + jitter)
 }

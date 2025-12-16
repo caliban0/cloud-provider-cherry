@@ -444,7 +444,7 @@ func (s loadBalancerSubTester) testServerBgpEnabled(t *testing.T) {
 			t.Fatalf("failed to get server: %v", err)
 		}
 
-		if got, want := srv.ServerBGP.Enabled, true; got != want {
+		if got, want := srv.BGP.Enabled, true; got != want {
 			t.Errorf("server %q bgp=%t, want=%t", srv.Hostname, got, want)
 		}
 	})
@@ -485,9 +485,9 @@ func (s loadBalancerSubTester) testNodeHasAnnotations(ctx context.Context, t *te
 			t.Fatalf("project %d doesn't have a local asn", project.ID)
 		}
 
-		for i, peerIP := range srv.ServerBGP.PeerAddresses {
+		for i, peerIP := range srv.BGP.PeerAddresses {
 			peerAsnKey := strings.Replace(ccm.DefaultAnnotationPeerASN, "{{n}}", strconv.Itoa(i), 1)
-			if got, want := node.Annotations[peerAsnKey], strconv.Itoa(srv.ServerBGP.PeerASN); got != want {
+			if got, want := node.Annotations[peerAsnKey], strconv.Itoa(srv.BGP.PeerASN); got != want {
 				t.Errorf("peerAsn=%s, want=%s, key=%s", got, want, peerAsnKey)
 			}
 
@@ -772,8 +772,8 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 
 	kubeHelper.setupKubeVip(ctx, kubeVipConfig{
 		localAsn:    strconv.Itoa(localASN),
-		peerAsn:     strconv.Itoa(env.mainNode.Server.PeerASN),
-		peerAddress: env.mainNode.Server.PeerAddresses[0],
+		peerAsn:     strconv.Itoa(env.mainNode.Server.BGP.PeerASN),
+		peerAddress: env.mainNode.Server.BGP.PeerAddresses[0],
 		version:     *kubeVipVersion,
 	})
 

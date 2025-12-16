@@ -40,7 +40,7 @@ type IPClient struct {
 	c ipClient
 }
 
-func NewIPClient(c ipClient) IPClient {
+func newIPClient(c ipClient) IPClient {
 	return IPClient{c: c}
 }
 

@@ -46,7 +46,7 @@ type ProjectClient struct {
 	ticker tickerFactory
 }
 
-func NewProjectClient(c projectClient, s serverListerUpdater, t tickerFactory) ProjectClient {
+func newProjectClient(c projectClient, s serverListerUpdater, t tickerFactory) ProjectClient {
 	return ProjectClient{c: c, server: s, ticker: t}
 }
 

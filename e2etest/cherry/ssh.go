@@ -19,7 +19,7 @@ type SSHKeyClient struct {
 	c sshKeyClient
 }
 
-func NewSSHKeyClient(c sshKeyClient) SSHKeyClient {
+func newSSHKeyClient(c sshKeyClient) SSHKeyClient {
 	return SSHKeyClient{c: c}
 }
 
