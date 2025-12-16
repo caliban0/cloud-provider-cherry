@@ -26,7 +26,7 @@ const (
 func setupProject(t *testing.T, name string) cherry.Project {
 	t.Helper()
 
-	p, err := getCherryClient(t).CreateProject(
+	p, err := getCherryClient(t).Project.Create(
 		cherry.NewProjectSpec{TeamID: *teamID, Name: name})
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -62,7 +62,13 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 
 	// Setup node provisioner:
 	np, err := microk8s.NewNodeProvisioner(
-		cfg.name, *k8sVersion, *serverPlan, *region, project.ID, getCherryClient(t))
+		cfg.name,
+		*k8sVersion,
+		*serverPlan,
+		*region,
+		project.ID,
+		getCherryClient(t),
+		getCherryClient(t).Project)
 	if err != nil {
 		t.Fatalf("failed to setup node provisioner: %v", err)
 	}

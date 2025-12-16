@@ -20,15 +20,19 @@ import (
 	"k8s.io/client-go/tools/watch"
 )
 
+type projectDeleter interface {
+	Delete(int) error
+}
+
 type cherryClient interface {
 	ProvisionServer(context.Context, cherry.NewServerSpec) (cherry.Server, error)
-	DeleteProject(int) error
 	CreateSSHKey(cherry.NewSSHKeySpec) (cherry.SSHKey, error)
 	DeleteSSHKey(int) error
 }
 
 type NodeProvisioner struct {
 	cherryClient cherryClient
+	projectDeleter projectDeleter
 	projectID    int
 	sshKeyID     string
 	serverPlan   string
@@ -169,13 +173,13 @@ func (np NodeProvisioner) untilProvisioned(ctx context.Context, n *ControlPlaneN
 }
 
 func (np NodeProvisioner) Cleanup() error {
-	projectErr := np.cherryClient.DeleteProject(np.projectID)
+	projectErr := np.projectDeleter.Delete(np.projectID)
 	sshID, convErr := strconv.Atoi(np.sshKeyID)
 	sshErr := np.cherryClient.DeleteSSHKey(sshID)
 	return errors.Join(projectErr, convErr, sshErr)
 }
 
-func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, projectID int, cc cherryClient) (NodeProvisioner, error) {
+func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, projectID int, cc cherryClient, pd projectDeleter) (NodeProvisioner, error) {
 	// Create a SSH key signer:
 	sshRunner, err := newSSHCmdRunner()
 	if err != nil {
@@ -195,6 +199,7 @@ func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, project
 
 	return NodeProvisioner{
 		cherryClient: cc,
+		projectDeleter: pd,
 		projectID:    projectID,
 		sshKeyID:     strconv.Itoa(sshKey.ID),
 		serverPlan:   serverPlan,

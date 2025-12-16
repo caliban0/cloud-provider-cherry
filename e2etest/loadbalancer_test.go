@@ -452,7 +452,7 @@ func (s loadBalancerSubTester) testServerBgpEnabled(t *testing.T) {
 
 func (s loadBalancerSubTester) testProjectBgpEnabled(t *testing.T) {
 	t.Run("project bgp enabled", func(t *testing.T) {
-		project, err := getCherryClient(t).GetProject(s.env.project.ID)
+		project, err := getCherryClient(t).Project.Get(s.env.project.ID)
 		if err != nil {
 			t.Fatalf("failed to get project: %v", err)
 		}
@@ -475,7 +475,7 @@ func (s loadBalancerSubTester) testNodeHasAnnotations(ctx context.Context, t *te
 			t.Fatalf("failed to get server: %v", err)
 		}
 
-		project, err := getCherryClient(t).GetProject(s.env.project.ID)
+		project, err := getCherryClient(t).Project.Get(s.env.project.ID)
 		if err != nil {
 			t.Fatalf("failed to get project: %v", err)
 		}
@@ -758,7 +758,7 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 	}
 
 	// We need a local ASN to deploy kube-vip.
-	env.project, err = getCherryClient(t).ForceProjectASN(ctx, env.project)
+	env.project, err = getCherryClient(t).Project.ForceASN(ctx, env.project)
 	if err != nil {
 		t.Fatalf("failed to force ASN for kube-vip project: %v", err)
 	}

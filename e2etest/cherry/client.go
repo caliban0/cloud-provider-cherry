@@ -23,22 +23,15 @@ type sshKeyClient interface {
 	Delete(id int) (cherrygo.SSHKey, *cherrygo.Response, error)
 }
 
-type projectClient interface {
-	Create(teamID int, request *cherrygo.CreateProject) (cherrygo.Project, *cherrygo.Response, error)
-	Update(id int, request *cherrygo.UpdateProject) (cherrygo.Project, *cherrygo.Response, error)
-	Get(id int, opts *cherrygo.GetOptions) (cherrygo.Project, *cherrygo.Response, error)
-	Delete(id int) (*cherrygo.Response, error)
-}
-
 // Client is an abstraction over the [github.com/cherryservers/cherrygo/v3]
 // Cherry Servers API client library.
 // It isolates Cherry Servers resource management from the test logic.
 type Client struct {
-	IP IPClient
+	IP      IPClient
+	Project ProjectClient
 
-	server  serverClient
-	sshKey  sshKeyClient
-	project projectClient
+	server serverClient
+	sshKey sshKeyClient
 
 	maxJitter    time.Duration
 	pollInterval time.Duration
@@ -55,12 +48,24 @@ func NewClient(authToken string) (Client, error) {
 		return Client{}, fmt.Errorf("couldn't create cherrygo client: %w", err)
 	}
 
+	tf := tickerFactory{maxJitter: defaultMaxJitter, pollInterval: defaultPollInterval}
+
 	return Client{server: c.Servers,
 		sshKey:       c.SSHKeys,
-		project:      c.Projects,
+		Project:      NewProjectClient(c.Projects, c.Servers, tf),
 		IP:           NewIPClient(c.IPAddresses),
 		maxJitter:    defaultMaxJitter,
 		pollInterval: defaultPollInterval}, nil
+}
+
+type tickerFactory struct {
+	maxJitter    time.Duration
+	pollInterval time.Duration
+}
+
+func (t tickerFactory) newTicker() *time.Ticker {
+	jitter := time.Duration(rand.Intn(int(t.maxJitter.Milliseconds()))+1) * time.Millisecond
+	return time.NewTicker(t.pollInterval + jitter)
 }
 
 func (c Client) newTicker() *time.Ticker {
