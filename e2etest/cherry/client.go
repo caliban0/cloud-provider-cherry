@@ -18,6 +18,7 @@ type Client struct {
 	Project ProjectClient
 	Server  ServerClient
 	SSHKey  SSHKeyClient
+	Plan    PlanClient
 }
 
 // NewClient creates a new Cherry Servers API client.
@@ -41,6 +42,7 @@ func NewClient(authToken string) (Client, error) {
 		SSHKey:  newSSHKeyClient(c.SSHKeys),
 		Project: newProjectClient(c.Projects, c.Servers, tf),
 		IP:      newIPClient(c.IPAddresses),
+		Plan:    newPlanClient(c.Plans),
 	}, nil
 }
 

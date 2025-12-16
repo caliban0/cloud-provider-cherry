@@ -60,6 +60,14 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 	// Setup project:
 	project := setupProject(t, cfg.name)
 
+	if *serverPlan == "" {
+		var err error
+		*serverPlan, err = getDefaultServerPlan(t)
+		if err != nil {
+			t.Fatalf("failed to get default server plan: %v", err)
+		}
+	}
+
 	// Setup node provisioner:
 	np, err := microk8s.NewNodeProvisioner(
 		cfg.name,
@@ -107,6 +115,23 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 		nodeProvisioner: np,
 		ctx:             ctx,
 	}
+}
+
+// get cheapest server plan with vds type and ok stock
+func getDefaultServerPlan(t *testing.T) (string, error) {
+	const (
+		planMinStock     = 15
+		planType         = "vds"
+		planBillingCycle = "Hourly"
+	)
+
+	plan, err := getCherryClient(t).Plan.GetCheapest(*teamID, planBillingCycle,
+		cherry.PlanTypeConstraint(planType), cherry.PlanStockConstraint(*region, planMinStock))
+	if err != nil {
+		return "", err
+	}
+
+	return plan, nil
 }
 
 func deployCcm(ctx context.Context, t testing.TB, n *microk8s.ControlPlaneNode, cfg ccm.Config) {
