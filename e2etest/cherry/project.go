@@ -10,6 +10,7 @@ import (
 type Project struct {
 	ID         int
 	BGPEnabled bool
+	Name       string
 	localASN   int
 }
 
@@ -18,8 +19,17 @@ func (p Project) LocalASN() (int, bool) {
 	return p.localASN, p.localASN != 0
 }
 
+// projectFrom builds a Project from a cherrygo Project.
+func projectFrom(p cherrygo.Project) Project {
+	return Project{
+		ID:         p.ID,
+		BGPEnabled: p.Bgp.Enabled,
+		localASN:   p.Bgp.LocalASN,
+		Name:       p.Name}
+}
+
 // Pseudo-constant for the project fields we want to get from the API.
-var projectGetFields = []string{"id", "bgp"}
+var projectGetFields = []string{"id", "bgp", "name"}
 
 // GetProject gets a project from Cherry Servers.
 func (c Client) GetProject(id int) (Project, error) {
@@ -27,7 +37,7 @@ func (c Client) GetProject(id int) (Project, error) {
 	if err != nil {
 		return Project{}, fmt.Errorf("couldn't get project %d: %w", id, err)
 	}
-	return Project{ID: p.ID, BGPEnabled: p.Bgp.Enabled, localASN: p.Bgp.LocalASN}, nil
+	return projectFrom(p), nil
 }
 
 type NewProjectSpec struct {
@@ -40,7 +50,7 @@ func (c Client) CreateProject(spec NewProjectSpec) (Project, error) {
 	if err != nil {
 		return Project{}, fmt.Errorf("couldn't create project with spec %v: %w", spec, err)
 	}
-	return Project{ID: p.ID, BGPEnabled: p.Bgp.Enabled, localASN: p.Bgp.LocalASN}, nil
+	return projectFrom(p), nil
 }
 
 // DeleteProject deletes a project from Cherry Servers.
@@ -63,7 +73,7 @@ func (c Client) UpdateProject(id int, spec ProjectUpdateSpec) (Project, error) {
 	if err != nil {
 		return Project{}, fmt.Errorf("couldn't update project %d: %w", id, err)
 	}
-	return Project{ID: p.ID, BGPEnabled: p.Bgp.Enabled, localASN: p.Bgp.LocalASN}, nil
+	return projectFrom(p), nil
 }
 
 // ForceProjectASN works around API limitations to ensure that

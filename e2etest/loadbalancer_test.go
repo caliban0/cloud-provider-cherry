@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cherryservers/cherrygo/v3"
 	"github.com/cherryservers/cloud-provider-cherry-tests/backoff"
+	"github.com/cherryservers/cloud-provider-cherry-tests/cherry"
 	"github.com/cherryservers/cloud-provider-cherry-tests/microk8s"
 	ccm "github.com/cherryservers/cloud-provider-cherry/cherry"
 	appsv1 "k8s.io/api/apps/v1"
@@ -404,12 +404,12 @@ func (s loadBalancerSubTester) testFipTags(ctx context.Context, t *testing.T) {
 	t.Run("fip tags", func(t *testing.T) {
 		kubeHelper := kubeHelpers{t: t, client: s.env.k8sClient}
 
-		fips, _, err := cherryClient.IPAddresses.List(s.env.project.ID, nil)
+		fips, err := getCherryClient(t).ListIPs(s.env.project.ID)
 		if err != nil {
-			t.Fatalf("failed to get fips: %v", err)
+			t.Fatalf("failed to list ips: %v", err)
 		}
 
-		var firstFip, secondFip cherrygo.IPAddress
+		var firstFip, secondFip cherry.IP
 		for _, fip := range fips {
 			switch fip.Address {
 			case s.firstSvc.Status.LoadBalancer.Ingress[0].IP:
@@ -420,7 +420,7 @@ func (s loadBalancerSubTester) testFipTags(ctx context.Context, t *testing.T) {
 		}
 
 		want := kubeHelper.loadBalancerFipTags(ctx, s.firstSvc)
-		got := *firstFip.Tags
+		got := firstFip.Tags
 		for k := range want {
 			if want[k] != got[k] {
 				t.Errorf("first svc fip tag %q: %q, want %q: %q", k, got[k], k, want[k])
@@ -428,7 +428,7 @@ func (s loadBalancerSubTester) testFipTags(ctx context.Context, t *testing.T) {
 		}
 
 		want = kubeHelper.loadBalancerFipTags(ctx, s.secondSvc)
-		got = *secondFip.Tags
+		got = secondFip.Tags
 		for k := range want {
 			if want[k] != got[k] {
 				t.Errorf("second svc fip tag %q: %q, want %q: %q", k, got[k], k, want[k])
@@ -439,12 +439,12 @@ func (s loadBalancerSubTester) testFipTags(ctx context.Context, t *testing.T) {
 
 func (s loadBalancerSubTester) testServerBgpEnabled(t *testing.T) {
 	t.Run("server bgp enabled", func(t *testing.T) {
-		srv, _, err := cherryClient.Servers.Get(s.env.mainNode.Server.ID, nil)
+		srv, err := getCherryClient(t).GetServer(s.env.mainNode.Server.ID)
 		if err != nil {
 			t.Fatalf("failed to get server: %v", err)
 		}
 
-		if got, want := srv.BGP.Enabled, true; got != want {
+		if got, want := srv.ServerBGP.Enabled, true; got != want {
 			t.Errorf("server %q bgp=%t, want=%t", srv.Hostname, got, want)
 		}
 	})
@@ -452,12 +452,12 @@ func (s loadBalancerSubTester) testServerBgpEnabled(t *testing.T) {
 
 func (s loadBalancerSubTester) testProjectBgpEnabled(t *testing.T) {
 	t.Run("project bgp enabled", func(t *testing.T) {
-		project, _, err := cherryClient.Projects.Get(s.env.project.ID, nil)
+		project, err := getCherryClient(t).GetProject(s.env.project.ID)
 		if err != nil {
 			t.Fatalf("failed to get project: %v", err)
 		}
 
-		if got, want := project.Bgp.Enabled, true; got != want {
+		if got, want := project.BGPEnabled, true; got != want {
 			t.Errorf("project %q bgp=%t, want=%t", project.Name, got, want)
 		}
 	})
@@ -470,24 +470,29 @@ func (s loadBalancerSubTester) testNodeHasAnnotations(ctx context.Context, t *te
 			t.Fatalf("failed to get node: %v", err)
 		}
 
-		srv, _, err := cherryClient.Servers.Get(s.env.mainNode.Server.ID, nil)
+		srv, err := getCherryClient(t).GetServer(s.env.mainNode.Server.ID)
 		if err != nil {
 			t.Fatalf("failed to get server: %v", err)
 		}
 
-		project, _, err := cherryClient.Projects.Get(s.env.project.ID, nil)
+		project, err := getCherryClient(t).GetProject(s.env.project.ID)
 		if err != nil {
 			t.Fatalf("failed to get project: %v", err)
 		}
 
-		for i, peerIP := range srv.Region.BGP.Hosts {
+		localASN, ok := project.LocalASN()
+		if !ok {
+			t.Fatalf("project %d doesn't have a local asn", project.ID)
+		}
+
+		for i, peerIP := range srv.ServerBGP.PeerAddresses {
 			peerAsnKey := strings.Replace(ccm.DefaultAnnotationPeerASN, "{{n}}", strconv.Itoa(i), 1)
-			if got, want := node.Annotations[peerAsnKey], strconv.Itoa(srv.Region.BGP.Asn); got != want {
+			if got, want := node.Annotations[peerAsnKey], strconv.Itoa(srv.ServerBGP.PeerASN); got != want {
 				t.Errorf("peerAsn=%s, want=%s, key=%s", got, want, peerAsnKey)
 			}
 
 			nodeAsnKey := strings.Replace(ccm.DefaultAnnotationNodeASN, "{{n}}", strconv.Itoa(i), 1)
-			if got, want := node.Annotations[nodeAsnKey], strconv.Itoa(project.Bgp.LocalASN); got != want {
+			if got, want := node.Annotations[nodeAsnKey], strconv.Itoa(localASN); got != want {
 				t.Errorf("nodeAsn=%s, want=%s, key=%s", got, want, nodeAsnKey)
 			}
 
@@ -530,7 +535,7 @@ func (s loadBalancerSubTester) testFirstServiceRemoval(ctx context.Context,
 			t.Fatalf("failed to delete service %q: %v", s.firstSvc.Name, err)
 		}
 
-		err = untilFipGone(ctx, s.env.project.ID, firstSvcIP)
+		err = untilFipGone(ctx, getCherryClient(t), s.env.project.ID, firstSvcIP)
 		if err != nil {
 			t.Errorf("first service fip not removed: %v", err)
 		}
@@ -558,7 +563,7 @@ func (s loadBalancerSubTester) testSecondServiceRemoval(ctx context.Context,
 		if err != nil {
 			t.Fatalf("failed to delete service %q: %v", s.secondSvc.Name, err)
 		}
-		err = untilFipGone(ctx, s.env.project.ID, secondSvcIP)
+		err = untilFipGone(ctx, getCherryClient(t), s.env.project.ID, secondSvcIP)
 		if err != nil {
 			t.Errorf("fip not removed: %v", err)
 		}
@@ -634,18 +639,22 @@ func newLoadBalancerSubTester(ctx context.Context,
 	}
 }
 
-func untilFipGone(ctx context.Context, projectID int, address string) error {
+type IPLister interface {
+	ListIPs(projectID int) ([]cherry.IP, error)
+}
+
+func untilFipGone(ctx context.Context, lister IPLister, projectID int, address string) error {
 	const timeout = time.Second * 90
 
 	fipRemovedCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	return backoff.ExpBackoffWithContext(func() (bool, error) {
-		fips, _, err := cherryClient.IPAddresses.List(projectID, nil)
+		ips, err := lister.ListIPs(projectID)
 		if err != nil {
 			return false, fmt.Errorf("failed to get ips: %w", err)
 		}
-		for _, fip := range fips {
+		for _, fip := range ips {
 			if fip.Address == address {
 				return false, nil
 			}

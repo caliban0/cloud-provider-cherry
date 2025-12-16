@@ -16,18 +16,18 @@ import (
 	"github.com/cherryservers/cloud-provider-cherry-tests/microk8s"
 )
 
-type FIPGetter interface {
-	GetFIP(id string) (cherry.FIP, error)
+type IPGetter interface {
+	GetIP(id string) (cherry.IP, error)
 }
 
-func untilIPHasTarget(ctx context.Context, getter FIPGetter, ip cherry.FIP, want ...string) error {
+func untilIPHasTarget(ctx context.Context, getter IPGetter, ip cherry.IP, want ...string) error {
 	const timeout = 300 * time.Second
 	ctx, cancel := context.WithTimeoutCause(
 		ctx, timeout, errors.New("timeout out waiting for ip to get target"))
 	defer cancel()
 
 	return backoff.ExpBackoffWithContext(func() (bool, error) {
-		fip, err := getter.GetFIP(ip.ID)
+		fip, err := getter.GetIP(ip.ID)
 		if err != nil {
 			return false, fmt.Errorf("failed to get fip: %w", err)
 		}
@@ -47,10 +47,10 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	env := setupTestEnv(t, cfg)
 	ctx := env.ctx
 
-	fip, err := getCherryClient(t).CreateFIP(cherry.NewFIPSpec{
+	fip, err := getCherryClient(t).CreateIP(cherry.NewIPSpec{
 		ProjectID: env.project.ID,
-		Region: env.mainNode.Server.Region,
-		Tags:   map[string]string{fipTag: ""},
+		Region:    env.mainNode.Server.Region,
+		Tags:      map[string]string{fipTag: ""},
 	})
 	if err != nil {
 		t.Fatalf("failed to create a cherry servers fip: %v", err)
@@ -109,7 +109,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		t.Fatalf("node %q didn't get deleted: %v", k8sn.Name, err)
 	}
 
-	fip, err = getCherryClient(t).GetFIP(fip.ID)
+	fip, err = getCherryClient(t).GetIP(fip.ID)
 	if err != nil {
 		t.Fatalf("failed to get fip: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 
 	// Reassign the FIP, so that we don't have to shut down the main node,
 	// since the main node is the one that has the CCM image side-loaded.
-	_, err = getCherryClient(t).AssignFIP(fip.ID, cp2.Server.ID)
+	_, err = getCherryClient(t).AssignIP(fip.ID, cp2.Server.ID)
 	if err != nil {
 		t.Fatalf("failed to re-assign ip %s: %v", fip.ID, err)
 	}

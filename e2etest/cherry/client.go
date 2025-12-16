@@ -33,6 +33,7 @@ type projectClient interface {
 type ipClient interface {
 	Create(id int, request *cherrygo.CreateIPAddress) (cherrygo.IPAddress, *cherrygo.Response, error)
 	Get(id string, opts *cherrygo.GetOptions) (cherrygo.IPAddress, *cherrygo.Response, error)
+	List(projectID int, opts *cherrygo.GetOptions) ([]cherrygo.IPAddress, *cherrygo.Response, error)
 	Assign(id string, request *cherrygo.AssignIPAddress) (cherrygo.IPAddress, *cherrygo.Response, error)
 }
 
