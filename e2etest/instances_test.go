@@ -109,7 +109,7 @@ func TestNodeAddDelete(t *testing.T) {
 	}
 
 	// node deletion
-	err = getCherryClient(t).Server.Delete(n.Server.ID)
+	err = cherryClient(t).Server.Delete(n.Server.ID)
 	if err != nil {
 		t.Fatalf("failed to delete server: %v", err)
 	}

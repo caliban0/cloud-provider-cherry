@@ -10,8 +10,7 @@ import (
 
 // TODO Cherry client should be an interface that's defined here.
 
-// TODO: rename to cherryClient, once refactor done
-var getCherryClient = func() func(t *testing.T) cherry.Client {
+var cherryClient = func() func(t *testing.T) cherry.Client {
 	var (
 		once sync.Once
 		c    cherry.Client

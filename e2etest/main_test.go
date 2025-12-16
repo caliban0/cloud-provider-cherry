@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/cherryservers/cherrygo/v3"
 	"github.com/go-logr/logr"
 	"k8s.io/klog/v2"
 )
@@ -26,7 +25,7 @@ const (
 )
 
 var (
-	cherryClient   *cherrygo.Client
+	apiToken       *string
 	teamID         *int
 	ccmImagePath   *string
 	cleanup        *bool
@@ -120,11 +119,7 @@ func runMain(m *testing.M) int {
 		log.Fatalf("failed to load test config: %v", err)
 	}
 
-	cherryClient, err = cherrygo.NewClient(cherrygo.WithAuthToken(cfg.apiToken))
-	if err != nil {
-		log.Fatalf("failed to initialize cherrygo client: %v", err)
-	}
-
+	apiToken = &cfg.apiToken
 	teamID = &cfg.teamID
 	ccmImagePath = &cfg.ccmImagePath
 	cleanup = &cfg.cleanup

@@ -47,7 +47,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	env := setupTestEnv(t, cfg)
 	ctx := env.ctx
 
-	fip, err := getCherryClient(t).IP.Create(cherry.NewIPSpec{
+	fip, err := cherryClient(t).IP.Create(cherry.NewIPSpec{
 		ProjectID: env.project.ID,
 		Region:    env.mainNode.Server.Region,
 		Tags:      map[string]string{fipTag: ""},
@@ -60,7 +60,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		t.Fatalf("failed to assign ip %s to %s", fip.Address, env.mainNode.Server.Hostname)
 	}
 
-	err = untilIPHasTarget(ctx, getCherryClient(t).IP, fip, env.mainNode.Server.Hostname)
+	err = untilIPHasTarget(ctx, cherryClient(t).IP, fip, env.mainNode.Server.Hostname)
 	if err != nil {
 		t.Fatalf("fip %s didn't get attached to cp node: %v", fip.ID, err)
 	}
@@ -94,7 +94,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	wantTarget := env.mainNode.Server.Hostname
 
 	// test that fip remains attached to node after deleting another node
-	err = getCherryClient(t).Server.Delete(cp1.Server.ID)
+	err = cherryClient(t).Server.Delete(cp1.Server.ID)
 	if err != nil {
 		t.Fatalf("failed to delete server %q: %v", cp1.Server.Hostname, err)
 	}
@@ -109,7 +109,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		t.Fatalf("node %q didn't get deleted: %v", k8sn.Name, err)
 	}
 
-	fip, err = getCherryClient(t).IP.Get(fip.ID)
+	fip, err = cherryClient(t).IP.Get(fip.ID)
 	if err != nil {
 		t.Fatalf("failed to get fip: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 
 	// Reassign the FIP, so that we don't have to shut down the main node,
 	// since the main node is the one that has the CCM image side-loaded.
-	_, err = getCherryClient(t).IP.Assign(fip.ID, cp2.Server.ID)
+	_, err = cherryClient(t).IP.Assign(fip.ID, cp2.Server.ID)
 	if err != nil {
 		t.Fatalf("failed to re-assign ip %s: %v", fip.ID, err)
 	}
@@ -134,7 +134,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 
 	wantTargets := []string{wantTarget, cp3.Server.Hostname}
 
-	err = untilIPHasTarget(ctx, getCherryClient(t).IP, fip, wantTargets...)
+	err = untilIPHasTarget(ctx, cherryClient(t).IP, fip, wantTargets...)
 	if err != nil {
 		t.Fatalf("fip %s didn't get attached to any of cp nodes %v: %v", fip.ID, wantTargets, err)
 	}

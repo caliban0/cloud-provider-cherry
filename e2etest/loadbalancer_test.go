@@ -404,7 +404,7 @@ func (s loadBalancerSubTester) testFipTags(ctx context.Context, t *testing.T) {
 	t.Run("fip tags", func(t *testing.T) {
 		kubeHelper := kubeHelpers{t: t, client: s.env.k8sClient}
 
-		fips, err := getCherryClient(t).IP.List(s.env.project.ID)
+		fips, err := cherryClient(t).IP.List(s.env.project.ID)
 		if err != nil {
 			t.Fatalf("failed to list ips: %v", err)
 		}
@@ -439,7 +439,7 @@ func (s loadBalancerSubTester) testFipTags(ctx context.Context, t *testing.T) {
 
 func (s loadBalancerSubTester) testServerBgpEnabled(t *testing.T) {
 	t.Run("server bgp enabled", func(t *testing.T) {
-		srv, err := getCherryClient(t).Server.Get(s.env.mainNode.Server.ID)
+		srv, err := cherryClient(t).Server.Get(s.env.mainNode.Server.ID)
 		if err != nil {
 			t.Fatalf("failed to get server: %v", err)
 		}
@@ -452,7 +452,7 @@ func (s loadBalancerSubTester) testServerBgpEnabled(t *testing.T) {
 
 func (s loadBalancerSubTester) testProjectBgpEnabled(t *testing.T) {
 	t.Run("project bgp enabled", func(t *testing.T) {
-		project, err := getCherryClient(t).Project.Get(s.env.project.ID)
+		project, err := cherryClient(t).Project.Get(s.env.project.ID)
 		if err != nil {
 			t.Fatalf("failed to get project: %v", err)
 		}
@@ -470,12 +470,12 @@ func (s loadBalancerSubTester) testNodeHasAnnotations(ctx context.Context, t *te
 			t.Fatalf("failed to get node: %v", err)
 		}
 
-		srv, err := getCherryClient(t).Server.Get(s.env.mainNode.Server.ID)
+		srv, err := cherryClient(t).Server.Get(s.env.mainNode.Server.ID)
 		if err != nil {
 			t.Fatalf("failed to get server: %v", err)
 		}
 
-		project, err := getCherryClient(t).Project.Get(s.env.project.ID)
+		project, err := cherryClient(t).Project.Get(s.env.project.ID)
 		if err != nil {
 			t.Fatalf("failed to get project: %v", err)
 		}
@@ -535,7 +535,7 @@ func (s loadBalancerSubTester) testFirstServiceRemoval(ctx context.Context,
 			t.Fatalf("failed to delete service %q: %v", s.firstSvc.Name, err)
 		}
 
-		err = untilFipGone(ctx, getCherryClient(t).IP, s.env.project.ID, firstSvcIP)
+		err = untilFipGone(ctx, cherryClient(t).IP, s.env.project.ID, firstSvcIP)
 		if err != nil {
 			t.Errorf("first service fip not removed: %v", err)
 		}
@@ -563,7 +563,7 @@ func (s loadBalancerSubTester) testSecondServiceRemoval(ctx context.Context,
 		if err != nil {
 			t.Fatalf("failed to delete service %q: %v", s.secondSvc.Name, err)
 		}
-		err = untilFipGone(ctx, getCherryClient(t).IP, s.env.project.ID, secondSvcIP)
+		err = untilFipGone(ctx, cherryClient(t).IP, s.env.project.ID, secondSvcIP)
 		if err != nil {
 			t.Errorf("fip not removed: %v", err)
 		}
@@ -758,7 +758,7 @@ func TestKubeVipAndNodeAnnotations(t *testing.T) {
 	}
 
 	// We need a local ASN to deploy kube-vip.
-	env.project, err = getCherryClient(t).Project.ForceASN(ctx, env.project)
+	env.project, err = cherryClient(t).Project.ForceASN(ctx, env.project)
 	if err != nil {
 		t.Fatalf("failed to force ASN for kube-vip project: %v", err)
 	}

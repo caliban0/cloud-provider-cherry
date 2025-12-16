@@ -26,7 +26,7 @@ const (
 func setupProject(t *testing.T, name string) cherry.Project {
 	t.Helper()
 
-	p, err := getCherryClient(t).Project.Create(
+	p, err := cherryClient(t).Project.Create(
 		cherry.NewProjectSpec{TeamID: *teamID, Name: name})
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -75,9 +75,9 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 		*serverPlan,
 		*region,
 		project.ID,
-		getCherryClient(t).Project,
-		getCherryClient(t).Server,
-		getCherryClient(t).SSHKey,
+		cherryClient(t).Project,
+		cherryClient(t).Server,
+		cherryClient(t).SSHKey,
 	)
 	if err != nil {
 		t.Fatalf("failed to setup node provisioner: %v", err)
@@ -101,7 +101,7 @@ func setupTestEnv(t *testing.T, cfg testEnvConfig) *testEnv {
 	}
 
 	deployCcm(ctx, t, n, ccm.Config{
-		AuthToken:               cherryClient.AuthToken,
+		AuthToken:               *apiToken,
 		Region:                  *region,
 		LoadBalancerSetting:     cfg.loadBalancer,
 		FIPTag:                  cfg.fipTag,
@@ -125,7 +125,7 @@ func getDefaultServerPlan(t *testing.T) (string, error) {
 		planBillingCycle = "Hourly"
 	)
 
-	plan, err := getCherryClient(t).Plan.GetCheapest(*teamID, planBillingCycle,
+	plan, err := cherryClient(t).Plan.GetCheapest(*teamID, planBillingCycle,
 		cherry.PlanTypeConstraint(planType), cherry.PlanStockConstraint(*region, planMinStock))
 	if err != nil {
 		return "", err
