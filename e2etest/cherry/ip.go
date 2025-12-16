@@ -29,6 +29,21 @@ func ipFrom(ip cherrygo.IPAddress) IP {
 		Tags:           *ip.Tags}
 }
 
+type ipClient interface {
+	Create(id int, request *cherrygo.CreateIPAddress) (cherrygo.IPAddress, *cherrygo.Response, error)
+	Get(id string, opts *cherrygo.GetOptions) (cherrygo.IPAddress, *cherrygo.Response, error)
+	List(projectID int, opts *cherrygo.GetOptions) ([]cherrygo.IPAddress, *cherrygo.Response, error)
+	Assign(id string, request *cherrygo.AssignIPAddress) (cherrygo.IPAddress, *cherrygo.Response, error)
+}
+
+type IPClient struct {
+	c ipClient
+}
+
+func NewIPClient(c ipClient) IPClient {
+	return IPClient{c: c}
+}
+
 type NewIPSpec struct {
 	// Region slug.
 	Region string
@@ -37,9 +52,9 @@ type NewIPSpec struct {
 	Tags      map[string]string
 }
 
-// CreateIP creates a floating IP address on Cherry Servers.
-func (c Client) CreateIP(spec NewIPSpec) (IP, error) {
-	ip, _, err := c.ip.Create(spec.ProjectID, &cherrygo.CreateIPAddress{
+// Create creates a floating IP address on Cherry Servers.
+func (c IPClient) Create(spec NewIPSpec) (IP, error) {
+	ip, _, err := c.c.Create(spec.ProjectID, &cherrygo.CreateIPAddress{
 		Region: spec.Region, Tags: &spec.Tags,
 	})
 	if err != nil {
@@ -51,18 +66,18 @@ func (c Client) CreateIP(spec NewIPSpec) (IP, error) {
 // Pseudo-constant for the IP fields we want to get from the API.
 var ipGetFields = []string{"id", "address", "targeted_to", "hostname", "tags"}
 
-// GetIP gets an IP from Cherry Servers.
-func (c Client) GetIP(id string) (IP, error) {
-	ip, _, err := c.ip.Get(id, &cherrygo.GetOptions{Fields: ipGetFields})
+// Get gets an IP from Cherry Servers.
+func (c IPClient) Get(id string) (IP, error) {
+	ip, _, err := c.c.Get(id, &cherrygo.GetOptions{Fields: ipGetFields})
 	if err != nil {
 		return IP{}, fmt.Errorf("couldn't get IP %q", id)
 	}
 	return ipFrom(ip), nil
 }
 
-// ListIPs retrieves a list of project IP addresses.
-func (c Client) ListIPs(projectID int) ([]IP, error) {
-	r, _, err := c.ip.List(projectID, &cherrygo.GetOptions{Fields: ipGetFields})
+// List retrieves a list of project IP addresses.
+func (c IPClient) List(projectID int) ([]IP, error) {
+	r, _, err := c.c.List(projectID, &cherrygo.GetOptions{Fields: ipGetFields})
 	if err != nil {
 		return nil, fmt.Errorf("couldn't list ips for project %d: %w", projectID, err)
 	}
@@ -75,9 +90,9 @@ func (c Client) ListIPs(projectID int) ([]IP, error) {
 	return ips, nil
 }
 
-// AssignIP assigns an IP to a server.
-func (c Client) AssignIP(ipID string, serverID int) (IP, error) {
-	ip, _, err := c.ip.Assign(ipID, &cherrygo.AssignIPAddress{ServerID: serverID})
+// Assign assigns an IP to a server.
+func (c IPClient) Assign(ipID string, serverID int) (IP, error) {
+	ip, _, err := c.c.Assign(ipID, &cherrygo.AssignIPAddress{ServerID: serverID})
 	if err != nil {
 		return IP{}, fmt.Errorf("couldn't assign IP %q to server %d: %w", ipID, serverID, err)
 	}

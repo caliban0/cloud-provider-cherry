@@ -30,21 +30,15 @@ type projectClient interface {
 	Delete(id int) (*cherrygo.Response, error)
 }
 
-type ipClient interface {
-	Create(id int, request *cherrygo.CreateIPAddress) (cherrygo.IPAddress, *cherrygo.Response, error)
-	Get(id string, opts *cherrygo.GetOptions) (cherrygo.IPAddress, *cherrygo.Response, error)
-	List(projectID int, opts *cherrygo.GetOptions) ([]cherrygo.IPAddress, *cherrygo.Response, error)
-	Assign(id string, request *cherrygo.AssignIPAddress) (cherrygo.IPAddress, *cherrygo.Response, error)
-}
-
 // Client is an abstraction over the [github.com/cherryservers/cherrygo/v3]
 // Cherry Servers API client library.
 // It isolates Cherry Servers resource management from the test logic.
 type Client struct {
+	IP IPClient
+
 	server  serverClient
 	sshKey  sshKeyClient
 	project projectClient
-	ip      ipClient
 
 	maxJitter    time.Duration
 	pollInterval time.Duration
@@ -64,7 +58,7 @@ func NewClient(authToken string) (Client, error) {
 	return Client{server: c.Servers,
 		sshKey:       c.SSHKeys,
 		project:      c.Projects,
-		ip:           c.IPAddresses,
+		IP:           NewIPClient(c.IPAddresses),
 		maxJitter:    defaultMaxJitter,
 		pollInterval: defaultPollInterval}, nil
 }

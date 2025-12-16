@@ -404,7 +404,7 @@ func (s loadBalancerSubTester) testFipTags(ctx context.Context, t *testing.T) {
 	t.Run("fip tags", func(t *testing.T) {
 		kubeHelper := kubeHelpers{t: t, client: s.env.k8sClient}
 
-		fips, err := getCherryClient(t).ListIPs(s.env.project.ID)
+		fips, err := getCherryClient(t).IP.List(s.env.project.ID)
 		if err != nil {
 			t.Fatalf("failed to list ips: %v", err)
 		}
@@ -535,7 +535,7 @@ func (s loadBalancerSubTester) testFirstServiceRemoval(ctx context.Context,
 			t.Fatalf("failed to delete service %q: %v", s.firstSvc.Name, err)
 		}
 
-		err = untilFipGone(ctx, getCherryClient(t), s.env.project.ID, firstSvcIP)
+		err = untilFipGone(ctx, getCherryClient(t).IP, s.env.project.ID, firstSvcIP)
 		if err != nil {
 			t.Errorf("first service fip not removed: %v", err)
 		}
@@ -563,7 +563,7 @@ func (s loadBalancerSubTester) testSecondServiceRemoval(ctx context.Context,
 		if err != nil {
 			t.Fatalf("failed to delete service %q: %v", s.secondSvc.Name, err)
 		}
-		err = untilFipGone(ctx, getCherryClient(t), s.env.project.ID, secondSvcIP)
+		err = untilFipGone(ctx, getCherryClient(t).IP, s.env.project.ID, secondSvcIP)
 		if err != nil {
 			t.Errorf("fip not removed: %v", err)
 		}
@@ -640,7 +640,7 @@ func newLoadBalancerSubTester(ctx context.Context,
 }
 
 type IPLister interface {
-	ListIPs(projectID int) ([]cherry.IP, error)
+	List(projectID int) ([]cherry.IP, error)
 }
 
 func untilFipGone(ctx context.Context, lister IPLister, projectID int, address string) error {
@@ -650,7 +650,7 @@ func untilFipGone(ctx context.Context, lister IPLister, projectID int, address s
 	defer cancel()
 
 	return backoff.ExpBackoffWithContext(func() (bool, error) {
-		ips, err := lister.ListIPs(projectID)
+		ips, err := lister.List(projectID)
 		if err != nil {
 			return false, fmt.Errorf("failed to get ips: %w", err)
 		}

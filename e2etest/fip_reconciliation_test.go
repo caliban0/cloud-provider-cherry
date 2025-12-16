@@ -17,7 +17,7 @@ import (
 )
 
 type IPGetter interface {
-	GetIP(id string) (cherry.IP, error)
+	Get(id string) (cherry.IP, error)
 }
 
 func untilIPHasTarget(ctx context.Context, getter IPGetter, ip cherry.IP, want ...string) error {
@@ -27,7 +27,7 @@ func untilIPHasTarget(ctx context.Context, getter IPGetter, ip cherry.IP, want .
 	defer cancel()
 
 	return backoff.ExpBackoffWithContext(func() (bool, error) {
-		fip, err := getter.GetIP(ip.ID)
+		fip, err := getter.Get(ip.ID)
 		if err != nil {
 			return false, fmt.Errorf("failed to get fip: %w", err)
 		}
@@ -47,7 +47,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	env := setupTestEnv(t, cfg)
 	ctx := env.ctx
 
-	fip, err := getCherryClient(t).CreateIP(cherry.NewIPSpec{
+	fip, err := getCherryClient(t).IP.Create(cherry.NewIPSpec{
 		ProjectID: env.project.ID,
 		Region:    env.mainNode.Server.Region,
 		Tags:      map[string]string{fipTag: ""},
@@ -60,7 +60,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		t.Fatalf("failed to assign ip %s to %s", fip.Address, env.mainNode.Server.Hostname)
 	}
 
-	err = untilIPHasTarget(ctx, getCherryClient(t), fip, env.mainNode.Server.Hostname)
+	err = untilIPHasTarget(ctx, getCherryClient(t).IP, fip, env.mainNode.Server.Hostname)
 	if err != nil {
 		t.Fatalf("fip %s didn't get attached to cp node: %v", fip.ID, err)
 	}
@@ -109,7 +109,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 		t.Fatalf("node %q didn't get deleted: %v", k8sn.Name, err)
 	}
 
-	fip, err = getCherryClient(t).GetIP(fip.ID)
+	fip, err = getCherryClient(t).IP.Get(fip.ID)
 	if err != nil {
 		t.Fatalf("failed to get fip: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 
 	// Reassign the FIP, so that we don't have to shut down the main node,
 	// since the main node is the one that has the CCM image side-loaded.
-	_, err = getCherryClient(t).AssignIP(fip.ID, cp2.Server.ID)
+	_, err = getCherryClient(t).IP.Assign(fip.ID, cp2.Server.ID)
 	if err != nil {
 		t.Fatalf("failed to re-assign ip %s: %v", fip.ID, err)
 	}
@@ -134,7 +134,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 
 	wantTargets := []string{wantTarget, cp3.Server.Hostname}
 
-	err = untilIPHasTarget(ctx, getCherryClient(t), fip, wantTargets...)
+	err = untilIPHasTarget(ctx, getCherryClient(t).IP, fip, wantTargets...)
 	if err != nil {
 		t.Fatalf("fip %s didn't get attached to any of cp nodes %v: %v", fip.ID, wantTargets, err)
 	}
