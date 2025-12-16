@@ -49,13 +49,30 @@ func serverFrom(sg cherrygo.Server) (Server, error) {
 	return s, nil
 }
 
+type serverClient interface {
+	Create(*cherrygo.CreateServer) (cherrygo.Server, *cherrygo.Response, error)
+	Get(id int, opts *cherrygo.GetOptions) (cherrygo.Server, *cherrygo.Response, error)
+	List(projectID int, opts *cherrygo.GetOptions) ([]cherrygo.Server, *cherrygo.Response, error)
+	Update(id int, request *cherrygo.UpdateServer) (cherrygo.Server, *cherrygo.Response, error)
+	Delete(id int) (cherrygo.Server, *cherrygo.Response, error)
+}
+
+type ServerClient struct {
+	c      serverClient
+	ticker tickerFactory
+}
+
+func NewServerClient(c serverClient, t tickerFactory) ServerClient {
+	return ServerClient{c: c, ticker: t}
+}
+
 // Pseudo-constant for the server fields we want to get from the API.
 var serverGetFields = []string{"id", "hostname", "ip_addresses",
 	"address", "type", "state", "region", "plan", "bgp"}
 
-// GetServer gets a server from Cherry Servers.
-func (c Client) GetServer(id int) (Server, error) {
-	srv, _, err := c.server.Get(id, &cherrygo.GetOptions{
+// Get gets a server from Cherry Servers.
+func (c ServerClient) Get(id int) (Server, error) {
+	srv, _, err := c.c.Get(id, &cherrygo.GetOptions{
 		Fields: serverGetFields,
 	})
 	if err != nil {
@@ -70,9 +87,9 @@ func (c Client) GetServer(id int) (Server, error) {
 	return s, nil
 }
 
-// ListServers lists all servers that belong to a Cherry Servers project.
-func (c Client) ListServers(projectID int) ([]Server, error) {
-	srv, _, err := c.server.List(projectID, &cherrygo.GetOptions{Fields: serverGetFields})
+// List lists all servers that belong to a Cherry Servers project.
+func (c ServerClient) List(projectID int) ([]Server, error) {
+	srv, _, err := c.c.List(projectID, &cherrygo.GetOptions{Fields: serverGetFields})
 	if err != nil {
 		return nil, fmt.Errorf("couldn't list servers for project %d: %w", projectID, err)
 	}
@@ -103,14 +120,14 @@ type NewServerSpec struct {
 	UserData string
 }
 
-// ProvisionServer creates a server on Cherry Servers and waits for it to become active.
-func (c Client) ProvisionServer(ctx context.Context, spec NewServerSpec) (Server, error) {
-	sid, err := c.createServer(spec)
+// Provision creates a server on Cherry Servers and waits for it to become active.
+func (c ServerClient) Provision(ctx context.Context, spec NewServerSpec) (Server, error) {
+	sid, err := c.create(spec)
 	if err != nil {
 		return Server{}, err
 	}
 
-	s, err := c.untilServerActive(ctx, sid)
+	s, err := c.untilActive(ctx, sid)
 	if err != nil {
 		return Server{}, fmt.Errorf("server %d didn't become active: %w", sid, err)
 	}
@@ -118,9 +135,9 @@ func (c Client) ProvisionServer(ctx context.Context, spec NewServerSpec) (Server
 	return s, nil
 }
 
-// createServer creates a server on Cherry Servers.
-func (c Client) createServer(spec NewServerSpec) (int, error) {
-	s, _, err := c.server.Create(&cherrygo.CreateServer{
+// create creates a server on Cherry Servers.
+func (c ServerClient) create(spec NewServerSpec) (int, error) {
+	s, _, err := c.c.Create(&cherrygo.CreateServer{
 		ProjectID: spec.ProjectID,
 		SSHKeys:   []string{spec.SSHKeyID},
 		Plan:      spec.Plan,
@@ -134,9 +151,9 @@ func (c Client) createServer(spec NewServerSpec) (int, error) {
 	return s.ID, nil
 }
 
-// untilServerActive waits for a server to become active.
-func (c Client) untilServerActive(ctx context.Context, id int) (Server, error) {
-	t := c.newTicker()
+// untilActive waits for a server to become active.
+func (c ServerClient) untilActive(ctx context.Context, id int) (Server, error) {
+	t := c.ticker.newTicker()
 
 	for {
 		select {
@@ -144,7 +161,7 @@ func (c Client) untilServerActive(ctx context.Context, id int) (Server, error) {
 			return Server{}, ctx.Err()
 		case <-t.C:
 			// Server might not have all fields set yet, so we can't use GetServer.
-			srv, _, err := c.server.Get(id, &cherrygo.GetOptions{Fields: serverGetFields})
+			srv, _, err := c.c.Get(id, &cherrygo.GetOptions{Fields: serverGetFields})
 			if err != nil {
 				return Server{}, fmt.Errorf("couldn't get server %d: %w", id, err)
 			}
@@ -160,9 +177,9 @@ func (c Client) untilServerActive(ctx context.Context, id int) (Server, error) {
 	}
 }
 
-// DeleteServer deletes a server on Cherry Servers.
-func (c Client) DeleteServer(id int) error {
-	_, _, err := c.server.Delete(id)
+// Delete deletes a server on Cherry Servers.
+func (c ServerClient) Delete(id int) error {
+	_, _, err := c.c.Delete(id)
 	if err != nil {
 		return fmt.Errorf("couldn't delete server %d", id)
 	}
@@ -173,16 +190,16 @@ type ServerUpdateSpec struct {
 	BGPEnabled bool
 }
 
-// UpdateServer updates a server on Cherry Servers.
+// Update updates a server on Cherry Servers.
 // Does a GET request after the update, because the response
 // from an update request doesn't contain all the expected fields.
-func (c Client) UpdateServer(id int, spec ServerUpdateSpec) (Server, error) {
-	_, _, err := c.server.Update(id, &cherrygo.UpdateServer{Bgp: spec.BGPEnabled})
+func (c ServerClient) Update(id int, spec ServerUpdateSpec) (Server, error) {
+	_, _, err := c.c.Update(id, &cherrygo.UpdateServer{Bgp: spec.BGPEnabled})
 	if err != nil {
 		return Server{}, fmt.Errorf("couldn't update server %d, with update spec %v: %w", id, spec, err)
 	}
 
-	return c.GetServer(id)
+	return c.Get(id)
 }
 
 // serverIPs gets a server's public and private IP,

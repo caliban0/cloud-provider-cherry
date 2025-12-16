@@ -24,21 +24,25 @@ type projectDeleter interface {
 	Delete(int) error
 }
 
+type serverProvisioner interface {
+	Provision(context.Context, cherry.NewServerSpec) (cherry.Server, error)
+}
+
 type cherryClient interface {
-	ProvisionServer(context.Context, cherry.NewServerSpec) (cherry.Server, error)
 	CreateSSHKey(cherry.NewSSHKeySpec) (cherry.SSHKey, error)
 	DeleteSSHKey(int) error
 }
 
 type NodeProvisioner struct {
-	cherryClient cherryClient
-	projectDeleter projectDeleter
-	projectID    int
-	sshKeyID     string
-	serverPlan   string
-	region       string
-	cmdRunner    sshCmdRunner
-	k8sVersion   string
+	cherryClient      cherryClient
+	projectDeleter    projectDeleter
+	serverProvisioner serverProvisioner
+	projectID         int
+	sshKeyID          string
+	serverPlan        string
+	region            string
+	cmdRunner         sshCmdRunner
+	k8sVersion        string
 }
 
 // Provision creates a Cherry Servers server and waits for k8s to be running.
@@ -59,7 +63,7 @@ func (np NodeProvisioner) Provision(ctx context.Context) (*ControlPlaneNode, err
 	userDataRaw = bytes.ReplaceAll(userDataRaw, []byte(k8sVersionVar), []byte(np.k8sVersion))
 	userdata := base64.StdEncoding.EncodeToString(userDataRaw)
 
-	srv, err := np.cherryClient.ProvisionServer(ctx, cherry.NewServerSpec{
+	srv, err := np.serverProvisioner.Provision(ctx, cherry.NewServerSpec{
 		ProjectID: np.projectID,
 		UserData:  userdata,
 		SSHKeyID:  np.sshKeyID,
@@ -179,7 +183,7 @@ func (np NodeProvisioner) Cleanup() error {
 	return errors.Join(projectErr, convErr, sshErr)
 }
 
-func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, projectID int, cc cherryClient, pd projectDeleter) (NodeProvisioner, error) {
+func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, projectID int, cc cherryClient, pd projectDeleter, sp serverProvisioner) (NodeProvisioner, error) {
 	// Create a SSH key signer:
 	sshRunner, err := newSSHCmdRunner()
 	if err != nil {
@@ -198,13 +202,14 @@ func NewNodeProvisioner(testName, k8sVersion, serverPlan, region string, project
 	}
 
 	return NodeProvisioner{
-		cherryClient: cc,
-		projectDeleter: pd,
-		projectID:    projectID,
-		sshKeyID:     strconv.Itoa(sshKey.ID),
-		serverPlan:   serverPlan,
-		region:       region,
-		cmdRunner:    *sshRunner,
-		k8sVersion:   k8sVersion,
+		cherryClient:      cc,
+		projectDeleter:    pd,
+		serverProvisioner: sp,
+		projectID:         projectID,
+		sshKeyID:          strconv.Itoa(sshKey.ID),
+		serverPlan:        serverPlan,
+		region:            region,
+		cmdRunner:         *sshRunner,
+		k8sVersion:        k8sVersion,
 	}, nil
 }

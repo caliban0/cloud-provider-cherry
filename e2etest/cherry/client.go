@@ -10,14 +10,6 @@ import (
 	"github.com/cherryservers/cherrygo/v3"
 )
 
-type serverClient interface {
-	Create(*cherrygo.CreateServer) (cherrygo.Server, *cherrygo.Response, error)
-	Get(id int, opts *cherrygo.GetOptions) (cherrygo.Server, *cherrygo.Response, error)
-	List(projectID int, opts *cherrygo.GetOptions) ([]cherrygo.Server, *cherrygo.Response, error)
-	Update(id int, request *cherrygo.UpdateServer) (cherrygo.Server, *cherrygo.Response, error)
-	Delete(id int) (cherrygo.Server, *cherrygo.Response, error)
-}
-
 type sshKeyClient interface {
 	Create(*cherrygo.CreateSSHKey) (cherrygo.SSHKey, *cherrygo.Response, error)
 	Delete(id int) (cherrygo.SSHKey, *cherrygo.Response, error)
@@ -29,8 +21,8 @@ type sshKeyClient interface {
 type Client struct {
 	IP      IPClient
 	Project ProjectClient
+	Server  ServerClient
 
-	server serverClient
 	sshKey sshKeyClient
 
 	maxJitter    time.Duration
@@ -50,7 +42,8 @@ func NewClient(authToken string) (Client, error) {
 
 	tf := tickerFactory{maxJitter: defaultMaxJitter, pollInterval: defaultPollInterval}
 
-	return Client{server: c.Servers,
+	return Client{
+		Server:       NewServerClient(c.Servers, tf),
 		sshKey:       c.SSHKeys,
 		Project:      NewProjectClient(c.Projects, c.Servers, tf),
 		IP:           NewIPClient(c.IPAddresses),

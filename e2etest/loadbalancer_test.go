@@ -439,7 +439,7 @@ func (s loadBalancerSubTester) testFipTags(ctx context.Context, t *testing.T) {
 
 func (s loadBalancerSubTester) testServerBgpEnabled(t *testing.T) {
 	t.Run("server bgp enabled", func(t *testing.T) {
-		srv, err := getCherryClient(t).GetServer(s.env.mainNode.Server.ID)
+		srv, err := getCherryClient(t).Server.Get(s.env.mainNode.Server.ID)
 		if err != nil {
 			t.Fatalf("failed to get server: %v", err)
 		}
@@ -470,7 +470,7 @@ func (s loadBalancerSubTester) testNodeHasAnnotations(ctx context.Context, t *te
 			t.Fatalf("failed to get node: %v", err)
 		}
 
-		srv, err := getCherryClient(t).GetServer(s.env.mainNode.Server.ID)
+		srv, err := getCherryClient(t).Server.Get(s.env.mainNode.Server.ID)
 		if err != nil {
 			t.Fatalf("failed to get server: %v", err)
 		}

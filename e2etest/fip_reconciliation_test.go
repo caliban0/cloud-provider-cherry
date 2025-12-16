@@ -94,7 +94,7 @@ func TestFipControlPlaneReconciliation(t *testing.T) {
 	wantTarget := env.mainNode.Server.Hostname
 
 	// test that fip remains attached to node after deleting another node
-	err = getCherryClient(t).DeleteServer(cp1.Server.ID)
+	err = getCherryClient(t).Server.Delete(cp1.Server.ID)
 	if err != nil {
 		t.Fatalf("failed to delete server %q: %v", cp1.Server.Hostname, err)
 	}
