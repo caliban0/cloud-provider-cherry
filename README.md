@@ -543,4 +543,4 @@ If a loadbalancer is enabled, CCM creates a Cherry Servers Floating IP (FIP) res
 ## Building
 
 For information on how to build the CCM, as opposed to just using a released version,
-and how to run it locally for development, see [BUILD.md](./BUILD.md).
+and how to run it locally for development, see [BUILD.md](./BUILD.md). Test.
